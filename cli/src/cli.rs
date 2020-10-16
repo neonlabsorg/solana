@@ -109,6 +109,10 @@ pub enum CliCommand {
         seed: String,
         program_id: Pubkey,
     },
+    CreateProgramAddress {
+        seed: String,
+        program_id: Pubkey,
+    },
     Feature(FeatureCliCommand),
     Inflation(InflationCliCommand),
     Fees,
@@ -558,6 +562,9 @@ pub fn parse_command(
         ("create-address-with-seed", Some(matches)) => {
             parse_create_address_with_seed(matches, default_signer, wallet_manager)
         }
+        ("create-program-address", Some(matches)) => {
+            parse_create_program_address(matches, default_signer, wallet_manager)
+        }
         ("feature", Some(matches)) => {
             parse_feature_subcommand(matches, default_signer, wallet_manager)
         }
@@ -986,6 +993,53 @@ fn process_create_address_with_seed(
     };
     let address = Pubkey::create_with_seed(&from_pubkey, seed, program_id)?;
     Ok(address.to_string())
+}
+
+pub fn parse_create_program_address(
+    matches: &ArgMatches<'_>,
+    default_signer: &DefaultSigner,
+    wallet_manager: &mut Option<Arc<RemoteWalletManager>>,
+) -> Result<CliCommandInfo, CliError> {
+    let signers = vec![];
+
+    let program_id = match matches.value_of("program_id").unwrap() {
+        "NONCE" => system_program::id(),
+        "STAKE" => solana_stake_program::id(),
+        "VOTE" => solana_vote_program::id(),
+        _ => pubkey_of(matches, "program_id").unwrap(),
+    };
+
+    let seed = matches.value_of("seed").unwrap().to_string();
+
+//    if seed.len() > MAX_SEED_LEN {
+//        return Err(CliError::BadParameter(
+//            "Address seed must not be longer than 32 bytes".to_string(),
+//        ));
+//    }
+
+    Ok(CliCommandInfo {
+        command: CliCommand::CreateProgramAddress {
+            seed,
+            program_id,
+        },
+        signers,
+    })
+}
+
+fn process_create_program_address(
+    config: &CliConfig,
+    seed: &str,
+    program_id: &Pubkey,
+) -> ProcessResult {
+    let strings = seed.split_whitespace().collect::<Vec<_>>();
+    let mut seeds = vec![];
+    let mut seeds_vec = vec![];
+    for s in strings {
+        seeds_vec.push(hex::decode(s).unwrap());
+    }
+    for i in &seeds_vec {seeds.push(&i[..]);}
+    let (address,nonce) = Pubkey::find_program_address(&seeds, program_id);
+    Ok(address.to_string() + "  " + &nonce.to_string())
 }
 
 fn process_airdrop(
@@ -1804,6 +1858,9 @@ pub fn process_command(config: &CliConfig) -> ProcessResult {
             seed,
             program_id,
         } => process_create_address_with_seed(config, from_pubkey.as_ref(), &seed, &program_id),
+        CliCommand::CreateProgramAddress {seed, program_id,} => {
+            process_create_program_address(config, &seed, &program_id)
+        }
         CliCommand::Fees => process_fees(&rpc_client, config),
         CliCommand::Feature(feature_subcommand) => {
             process_feature_subcommand(&rpc_client, config, feature_subcommand)
@@ -2589,6 +2646,29 @@ pub fn app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> App<'ab, '
                         .value_name("FROM_PUBKEY")
                         .required(false),
                         "From (base) key, [default: cli config keypair]. "),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("create-program-address")
+                .about("Generate a program address")
+                .arg(
+                    Arg::with_name("seed")
+                        .index(1)
+                        .value_name("SEED_STRING")
+                        .takes_value(true)
+                        .required(true)
+                        .help("The seeds"),
+                )
+                .arg(
+                    Arg::with_name("program_id")
+                        .index(2)
+                        .value_name("PROGRAM_ID")
+                        .takes_value(true)
+                        .required(true)
+                        .help(
+                            "The program_id that the address will ultimately be used for, \n\
+                             or one of NONCE, STAKE, and VOTE keywords",
+                        ),
                 ),
         )
         .subcommand(

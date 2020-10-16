@@ -3552,6 +3552,7 @@ dependencies = [
  "criterion-stats",
  "ctrlc",
  "dirs",
+ "hex",
  "humantime 2.0.1",
  "indicatif",
  "log 0.4.8",
