@@ -152,6 +152,15 @@ pub fn register_syscalls<'a>(
         }),
     )?;
 
+    vm.register_syscall_with_context_ex(
+        "sol_eth_decode_tx",
+        Box::new(SyscallEthDecodeTx {
+            cost: 0,
+            compute_meter: invoke_context.get_compute_meter(),
+            loader_id,
+        }),
+    )?;
+
     // Cross-program invocation syscalls
 
     let invoke_context = Rc::new(RefCell::new(invoke_context));
@@ -552,6 +561,30 @@ impl<'a> SyscallObject<BPFError> for SyscallRistrettoMul<'a> {
         *result = point * scalar;
 
         Ok(0)
+    }
+}
+
+/// Decode and verify (get sender of) ethereum transaction
+struct SyscallEthDecodeTx<'a> {
+    cost: u64,
+    compute_meter: Rc<RefCell<dyn ComputeMeter>>,
+    loader_id: &'a Pubkey,
+}
+impl<'a> SyscallObject<BPFError> for SyscallEthDecodeTx<'a> {
+    fn call(
+        &mut self,
+        arg1: u64,
+        arg2: u64,
+        arg3: u64,
+        arg4: u64,
+        arg5: u64,
+        ro_regions: &[MemoryRegion],
+        _rw_regions: &[MemoryRegion],
+    ) -> Result<u64, EbpfError<BPFError>> {
+        self.compute_meter.consume(self.cost)?;
+        let eth_tx =
+            translate_slice!(u8, arg1, arg2, ro_regions, self.loader_id)?;
+        Ok(eth_tx.len() as u64 + eth_tx[0] as u64)
     }
 }
 
