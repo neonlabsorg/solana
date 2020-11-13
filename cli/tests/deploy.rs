@@ -64,7 +64,7 @@ fn test_cli_deploy_program() {
         program_location: pathbuf.to_str().unwrap().to_string(),
         address: None,
         use_deprecated_loader: false,
-        evm: false,
+        use_evm_loader: None,
     };
 
     let response = process_command(&config);
@@ -99,7 +99,7 @@ fn test_cli_deploy_program() {
         program_location: pathbuf.to_str().unwrap().to_string(),
         address: Some(1),
         use_deprecated_loader: false,
-        evm: false,
+        use_evm_loader: None,
     };
     process_command(&config).unwrap();
     let account1 = rpc_client
