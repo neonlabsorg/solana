@@ -178,6 +178,7 @@ pub enum CliCommand {
         program_location: String,
         address: Option<SignerIndex>,
         use_deprecated_loader: bool,
+        use_evm_loader: Option<Pubkey>,
     },
     // Stake Commands
     CreateStakeAccount {
@@ -610,15 +611,23 @@ pub fn parse_command(
                 1
             });
             let use_deprecated_loader = matches.is_present("use_deprecated_loader");
+            let use_evm_loader = pubkey_of_signer(matches, "use_evm_loader", wallet_manager)?;
 
-            Ok(CliCommandInfo {
-                command: CliCommand::Deploy {
-                    program_location: matches.value_of("program_location").unwrap().to_string(),
-                    address,
-                    use_deprecated_loader,
-                },
-                signers,
-            })
+            if use_evm_loader.is_some() && use_deprecated_loader {
+                Err(CliError::BadParameter(
+                    "There are no deprecated loader for EVM.".to_string(),
+                ))
+            } else {
+                Ok(CliCommandInfo {
+                    command: CliCommand::Deploy {
+                        program_location: matches.value_of("program_location").unwrap().to_string(),
+                        address,
+                        use_deprecated_loader,
+                        use_evm_loader,
+                    },
+                    signers,
+                })
+            }
         }
         // Stake Commands
         ("create-stake-account", Some(matches)) => {
@@ -1132,6 +1141,7 @@ fn process_deploy(
     program_location: &str,
     address: Option<SignerIndex>,
     use_deprecated_loader: bool,
+    use_evm_loader: &Option<Pubkey>,
 ) -> ProcessResult {
     const WORDS: usize = 12;
     // Create ephemeral keypair to use for program address, if not provided
@@ -1145,6 +1155,7 @@ fn process_deploy(
         program_location,
         address,
         use_deprecated_loader,
+        use_evm_loader,
         new_keypair,
     );
 
@@ -1173,6 +1184,7 @@ fn do_process_deploy(
     program_location: &str,
     address: Option<SignerIndex>,
     use_deprecated_loader: bool,
+    use_evm_loader: &Option<Pubkey>,
     new_keypair: Keypair,
 ) -> ProcessResult {
     let program_id = if let Some(i) = address {
@@ -1188,10 +1200,14 @@ fn do_process_deploy(
         CliError::DynamicProgramError(format!("Unable to read program file: {}", err))
     })?;
 
-    EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, true)))
-        .map_err(|err| CliError::DynamicProgramError(format!("ELF error: {}", err)))?;
+    if (!use_evm_loader.is_some()) {
+        EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, true)))
+            .map_err(|err| CliError::DynamicProgramError(format!("ELF error: {}", err)))?;
+    }
 
-    let loader_id = if use_deprecated_loader {
+    let loader_id = if use_evm_loader.is_some() {
+        use_evm_loader.unwrap()
+    } else if use_deprecated_loader {
         bpf_loader_deprecated::id()
     } else {
         bpf_loader::id()
@@ -1619,12 +1635,14 @@ pub fn process_command(config: &CliConfig) -> ProcessResult {
             program_location,
             address,
             use_deprecated_loader,
+            use_evm_loader,
         } => process_deploy(
             &rpc_client,
             config,
             program_location,
             *address,
             *use_deprecated_loader,
+            use_evm_loader,
         ),
 
         // Stake Commands
@@ -2253,6 +2271,12 @@ pub fn app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> App<'ab, '
                         .hidden(true) // Don't document this argument to discourage its use
                         .help("Use the deprecated BPF loader")
                 )
+                .arg(
+                    Arg::with_name("use_evm_loader")
+                        .long("use-evm-loader")
+                        .takes_value(true)
+                        .help("EVM loader Pubkey (if use EVM loader instead of BPF loader)")
+                )
                 .arg(commitment_arg_with_default("max")),
         )
         .subcommand(
@@ -2621,6 +2645,7 @@ mod tests {
                     program_location: "/Users/test/program.o".to_string(),
                     address: None,
                     use_deprecated_loader: false,
+                    use_evm_loader: None,
                 },
                 signers: vec![read_keypair_file(&keypair_file).unwrap().into()],
             }
@@ -2642,6 +2667,7 @@ mod tests {
                     program_location: "/Users/test/program.o".to_string(),
                     address: Some(1),
                     use_deprecated_loader: false,
+                    use_evm_loader: None,
                 },
                 signers: vec![
                     read_keypair_file(&keypair_file).unwrap().into(),
@@ -2955,6 +2981,7 @@ mod tests {
             program_location: pathbuf.to_str().unwrap().to_string(),
             address: None,
             use_deprecated_loader: false,
+            use_evm_loader: None,
         };
         let result = process_command(&config);
         let json: Value = serde_json::from_str(&result.unwrap()).unwrap();
@@ -2973,6 +3000,7 @@ mod tests {
             program_location: "bad/file/location.so".to_string(),
             address: None,
             use_deprecated_loader: false,
+            use_evm_loader: None,
         };
         assert!(process_command(&config).is_err());
     }
