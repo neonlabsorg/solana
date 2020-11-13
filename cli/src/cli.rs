@@ -1200,8 +1200,10 @@ fn do_process_deploy(
         CliError::DynamicProgramError(format!("Unable to read program file: {}", err))
     })?;
 
-    EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, true)))
-        .map_err(|err| CliError::DynamicProgramError(format!("ELF error: {}", err)))?;
+    if (!use_evm_loader.is_some()) {
+        EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, true)))
+            .map_err(|err| CliError::DynamicProgramError(format!("ELF error: {}", err)))?;
+    }
 
     let loader_id = if use_evm_loader.is_some() {
         use_evm_loader.unwrap()
