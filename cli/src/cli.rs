@@ -1201,7 +1201,7 @@ fn do_process_deploy(
     })?;
 
     if (!use_evm_loader.is_some()) {
-        EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, true)))
+        EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, false)))
             .map_err(|err| CliError::DynamicProgramError(format!("ELF error: {}", err)))?;
     }
 
@@ -1300,7 +1300,8 @@ fn do_process_deploy(
     }
     messages.append(&mut write_message_refs);
 
-    let instruction = loader_instruction::finalize(&program_id.pubkey(), &loader_id);
+    let mut instruction = loader_instruction::finalize_evm(&&config.signers[0].pubkey(), &program_id.pubkey(), &loader_id);
+    //    loader_instruction::finalize(&program_id.pubkey(), &loader_id);
     let finalize_message = Message::new(&[instruction], Some(&signers[0].pubkey()));
     messages.push(&finalize_message);
 

@@ -127,7 +127,7 @@ impl ComputeBudget {
 
         if feature_set.is_active(&compute_budget_balancing::id()) {
             compute_budget = ComputeBudget {
-                max_units: 200_000,
+                max_units: 2_000_000,
                 log_units: 100,
                 log_64_units: 100,
                 create_program_address_units: 1500,
