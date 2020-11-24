@@ -1213,7 +1213,9 @@ fn do_process_deploy(
         bpf_loader::id()
     };
 
-    let minimum_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data.len())?;
+    let mut pdlen = program_data.len();
+    pdlen = pdlen * 10;
+    let minimum_balance = rpc_client.get_minimum_balance_for_rent_exemption(pdlen)?;
     let signers = [config.signers[0], program_id];
 
     // Check program account to see if partial initialization has occurred
@@ -1239,7 +1241,7 @@ fn do_process_deploy(
         if account.data.is_empty() && system_program::check_id(&account.owner) {
             instructions.push(system_instruction::allocate(
                 &program_id.pubkey(),
-                program_data.len() as u64,
+                pdlen as u64,
             ));
             if account.owner != loader_id {
                 instructions.push(system_instruction::assign(&program_id.pubkey(), &loader_id));
@@ -1261,7 +1263,7 @@ fn do_process_deploy(
                 &config.signers[0].pubkey(),
                 &program_id.pubkey(),
                 minimum_balance,
-                program_data.len() as u64,
+                pdlen as u64,
                 &loader_id,
             )],
             minimum_balance,
@@ -1284,11 +1286,27 @@ fn do_process_deploy(
     }
 
     let mut write_messages = vec![];
+    // Write code len
+    let mut header_size = 0usize;
+    if use_evm_loader.is_some() {
+        let mut code_len = Vec::new();
+        code_len.extend_from_slice(&(program_data.len() as u64).to_le_bytes());
+        let instruction_len = loader_instruction::write(
+            &program_id.pubkey(),
+            &loader_id,
+            0u32,
+            code_len,
+        );
+        let message_len = Message::new(&[instruction_len], Some(&signers[0].pubkey()));
+        write_messages.push(message_len);
+        header_size = 8;
+    }
+    // Write code
     for (chunk, i) in program_data.chunks(DATA_CHUNK_SIZE).zip(0..) {
         let instruction = loader_instruction::write(
             &program_id.pubkey(),
             &loader_id,
-            (i * DATA_CHUNK_SIZE) as u32,
+            (header_size + i * DATA_CHUNK_SIZE) as u32,
             chunk.to_vec(),
         );
         let message = Message::new(&[instruction], Some(&signers[0].pubkey()));
