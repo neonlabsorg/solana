@@ -121,13 +121,13 @@ impl ComputeBudget {
             sha256_base_cost: 85,
             sha256_byte_cost: 1,
             max_call_depth: 20,
-            stack_frame_size: 4_096,
+            stack_frame_size: 4_096*1024,
             log_pubkey_units: 0,
         };
 
         if feature_set.is_active(&compute_budget_balancing::id()) {
             compute_budget = ComputeBudget {
-                max_units: 200_000,
+                max_units: 2_000_000,
                 log_units: 100,
                 log_64_units: 100,
                 create_program_address_units: 1500,
