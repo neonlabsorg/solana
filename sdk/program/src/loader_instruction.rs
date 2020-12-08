@@ -51,3 +51,12 @@ pub fn finalize(account_pubkey: &Pubkey, program_id: &Pubkey) -> Instruction {
     ];
     Instruction::new(*program_id, &LoaderInstruction::Finalize, account_metas)
 }
+
+pub fn finalize_evm(creator_pubkey: &Pubkey, account_pubkey: &Pubkey, program_id: &Pubkey) -> Instruction {
+    let account_metas = vec![
+        AccountMeta::new(*account_pubkey, true),
+        AccountMeta::new(*creator_pubkey, false),
+        AccountMeta::new(rent::id(), false),
+    ];
+    Instruction::new(*program_id, &LoaderInstruction::Finalize, account_metas)
+}

@@ -182,6 +182,7 @@ pub enum CliCommand {
         address: Option<SignerIndex>,
         use_deprecated_loader: bool,
         allow_excessive_balance: bool,
+        use_evm_loader: Option<Pubkey>,
     },
     // Stake Commands
     CreateStakeAccount {
@@ -620,6 +621,7 @@ pub fn parse_command(
                     address,
                     use_deprecated_loader: matches.is_present("use_deprecated_loader"),
                     allow_excessive_balance: matches.is_present("allow_excessive_balance"),
+                    use_evm_loader: pubkey_of_signer(matches, "use_evm_loader", wallet_manager)?,
                 },
                 signers,
             })
@@ -1159,6 +1161,7 @@ fn process_deploy(
     address: Option<SignerIndex>,
     use_deprecated_loader: bool,
     allow_excessive_balance: bool,
+    use_evm_loader: &Option<Pubkey>,
 ) -> ProcessResult {
     const WORDS: usize = 12;
     // Create ephemeral keypair to use for program address, if not provided
@@ -1173,6 +1176,7 @@ fn process_deploy(
         address,
         use_deprecated_loader,
         allow_excessive_balance,
+        use_evm_loader,
         new_keypair,
     );
 
@@ -1202,6 +1206,7 @@ fn do_process_deploy(
     address: Option<SignerIndex>,
     use_deprecated_loader: bool,
     allow_excessive_balance: bool,
+    use_evm_loader: &Option<Pubkey>,
     new_keypair: Keypair,
 ) -> ProcessResult {
     let program_id = if let Some(i) = address {
@@ -1217,16 +1222,25 @@ fn do_process_deploy(
         CliError::DynamicProgramError(format!("Unable to read program file: {}", err))
     })?;
 
-    EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, true)))
-        .map_err(|err| CliError::DynamicProgramError(format!("ELF error: {}", err)))?;
+    if !use_evm_loader.is_some() {
+        EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, false)))
+            .map_err(|err| CliError::DynamicProgramError(format!("ELF error: {}", err)))?;
+    }
 
-    let loader_id = if use_deprecated_loader {
+    let loader_id = if use_evm_loader.is_some() {
+        use_evm_loader.unwrap()
+    } else if use_deprecated_loader {
         bpf_loader_deprecated::id()
     } else {
         bpf_loader::id()
     };
 
-    let minimum_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data.len())?;
+    let program_data_len = if use_evm_loader.is_some() {
+        program_data.len() + 10*1024
+    } else {
+        program_data.len()
+    };
+    let minimum_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
     let signers = [config.signers[0], program_id];
 
     // Check program account to see if partial initialization has occurred
@@ -1252,7 +1266,7 @@ fn do_process_deploy(
         if account.data.is_empty() && system_program::check_id(&account.owner) {
             instructions.push(system_instruction::allocate(
                 &program_id.pubkey(),
-                program_data.len() as u64,
+                program_data_len as u64,
             ));
             if account.owner != loader_id {
                 instructions.push(system_instruction::assign(&program_id.pubkey(), &loader_id));
@@ -1283,7 +1297,7 @@ fn do_process_deploy(
                 &config.signers[0].pubkey(),
                 &program_id.pubkey(),
                 minimum_balance,
-                program_data.len() as u64,
+                program_data_len as u64,
                 &loader_id,
             )],
             minimum_balance,
@@ -1306,11 +1320,27 @@ fn do_process_deploy(
     }
 
     let mut write_messages = vec![];
+    // Write code len
+    let mut header_size = 0usize;
+    if use_evm_loader.is_some() {
+        let mut code_len = Vec::new();
+        code_len.extend_from_slice(&(program_data.len() as u64).to_le_bytes());
+        let instruction_len = loader_instruction::write(
+            &program_id.pubkey(),
+            &loader_id,
+            0u32,
+            code_len,
+        );
+        let message_len = Message::new(&[instruction_len], Some(&signers[0].pubkey()));
+        write_messages.push(message_len);
+        header_size = 8;
+    }
+    // Write code
     for (chunk, i) in program_data.chunks(DATA_CHUNK_SIZE).zip(0..) {
         let instruction = loader_instruction::write(
             &program_id.pubkey(),
             &loader_id,
-            (i * DATA_CHUNK_SIZE) as u32,
+            (header_size + i * DATA_CHUNK_SIZE) as u32,
             chunk.to_vec(),
         );
         let message = Message::new(&[instruction], Some(&signers[0].pubkey()));
@@ -1322,7 +1352,12 @@ fn do_process_deploy(
     }
     messages.append(&mut write_message_refs);
 
-    let instruction = loader_instruction::finalize(&program_id.pubkey(), &loader_id);
+    let instruction = if use_evm_loader.is_some() {
+        loader_instruction::finalize_evm(&&config.signers[0].pubkey(), &program_id.pubkey(), &loader_id)
+    } else {
+        loader_instruction::finalize(&program_id.pubkey(), &loader_id)
+    };
+
     let finalize_message = Message::new(&[instruction], Some(&signers[0].pubkey()));
     messages.push(&finalize_message);
 
@@ -1657,6 +1692,7 @@ pub fn process_command(config: &CliConfig) -> ProcessResult {
             program_location,
             address,
             use_deprecated_loader,
+            use_evm_loader,
             allow_excessive_balance,
         } => process_deploy(
             &rpc_client,
@@ -1665,6 +1701,7 @@ pub fn process_command(config: &CliConfig) -> ProcessResult {
             *address,
             *use_deprecated_loader,
             *allow_excessive_balance,
+            use_evm_loader,
         ),
 
         // Stake Commands
@@ -2299,6 +2336,12 @@ pub fn app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> App<'ab, '
                         .takes_value(false)
                         .help("Use the designated program id, even if the account already holds a large balance of SOL")
                 )
+                .arg(
+                    Arg::with_name("use_evm_loader")
+                        .long("use-evm-loader")
+                        .takes_value(true)
+                        .help("EVM loader Pubkey (if use EVM loader instead of BPF loader)")
+                )
                 .arg(commitment_arg_with_default("max")),
         )
         .subcommand(
@@ -2668,6 +2711,7 @@ mod tests {
                     address: None,
                     use_deprecated_loader: false,
                     allow_excessive_balance: false,
+                    use_evm_loader: None,
                 },
                 signers: vec![read_keypair_file(&keypair_file).unwrap().into()],
             }
@@ -2690,6 +2734,7 @@ mod tests {
                     address: Some(1),
                     use_deprecated_loader: false,
                     allow_excessive_balance: false,
+                    use_evm_loader: None,
                 },
                 signers: vec![
                     read_keypair_file(&keypair_file).unwrap().into(),
@@ -3004,6 +3049,7 @@ mod tests {
             address: None,
             use_deprecated_loader: false,
             allow_excessive_balance: false,
+            use_evm_loader: None,
         };
         let result = process_command(&config);
         let json: Value = serde_json::from_str(&result.unwrap()).unwrap();
@@ -3023,6 +3069,7 @@ mod tests {
             address: None,
             use_deprecated_loader: false,
             allow_excessive_balance: false,
+            use_evm_loader: None,
         };
         assert!(process_command(&config).is_err());
     }
