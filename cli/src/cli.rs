@@ -184,6 +184,12 @@ pub enum CliCommand {
         allow_excessive_balance: bool,
         use_evm_loader: Option<Pubkey>,
     },
+    CreateEtherAccount {
+        ether_address: [u8;20],
+        lamports: SpendAmount,
+        space: u64,
+        evm_loader: Pubkey,
+    },
     // Stake Commands
     CreateStakeAccount {
         stake_account: SignerIndex,
@@ -622,6 +628,30 @@ pub fn parse_command(
                     use_deprecated_loader: matches.is_present("use_deprecated_loader"),
                     allow_excessive_balance: matches.is_present("allow_excessive_balance"),
                     use_evm_loader: pubkey_of_signer(matches, "use_evm_loader", wallet_manager)?,
+                },
+                signers,
+            })
+        }
+        ("create-ether-account", Some(matches)) => {
+            let signers = vec![default_signer.signer_from_path(matches, wallet_manager)?];
+            let ether_bytes = matches.value_of("ether").map(|s| hex::decode(s))
+                    .map_or(Err(CliError::BadParameter("ether".to_string())), 
+                            |v| v.map_err(|_| CliError::BadParameter("ether".to_string())))?;
+            if ether_bytes.len() != 20 {
+                return Err(Box::new(CliError::BadParameter("ether".to_string())));
+            }
+            let mut ether_address = [0u8;20];
+            ether_address[..].copy_from_slice(&ether_bytes[0..20]);
+
+            let evm_loader = if let Some(signer) = pubkey_of_signer(matches, "evm_loader", wallet_manager)? {signer}
+                    else {return Err(Box::new(CliError::BadParameter("evm_loader".to_string())));};
+
+            Ok(CliCommandInfo {
+                command: CliCommand::CreateEtherAccount {
+                    ether_address: ether_address,
+                    lamports: SpendAmount::new_from_matches(matches, "lamports"),
+                    space: value_of(matches, "space").unwrap_or(0),
+                    evm_loader: evm_loader,
                 },
                 signers,
             })
@@ -1154,6 +1184,94 @@ fn send_and_confirm_transactions_with_spinner<T: Signers>(
     }
 }
 
+use serde::{Serialize, Deserialize};
+/// Create a new account
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+enum EvmInstruction {
+    Write,
+    Finalize,
+    ///
+    /// # Account references
+    ///   0. [WRITE] New account
+    ///   1. [WRITE, SIGNER] Funding account
+    ///   2. [] Owner ('11111111111111111111111111111111')
+    ///   3. [] Signer (if any)
+    CreateAccount {
+        /// Number of lamports to transfer to the new account
+        lamports: u64,
+
+        /// Number of bytes of memory to allocate
+        space: u64,
+
+        /// Ethereum address of account
+        ether: [u8;20],
+
+        /// Nonce for create valid program_address from ethereum address
+        nonce: u8,
+    },
+    Call,
+}
+
+fn process_create_ether_account(
+    rpc_client: &RpcClient,
+    config: &CliConfig,
+    ether_address: &[u8;20],
+    lamports: SpendAmount,
+    space: u64,
+    evm_loader: &Pubkey,
+) -> ProcessResult {
+    let (solana_address, nonce) = Pubkey::find_program_address(&[ether_address], evm_loader);
+    println!("Create ethereum account {} <- {} {}", solana_address, hex::encode(ether_address), nonce);
+
+    let instruction = {
+        use solana_sdk::instruction::AccountMeta;
+        let amount = if let SpendAmount::Some(value) = lamports {value} else {0u64};
+        Instruction::new(*evm_loader,
+                         &EvmInstruction::CreateAccount {lamports: amount, space, ether: *ether_address, nonce},
+                         vec![
+                              AccountMeta::new(config.signers[0].pubkey(), true),
+                              AccountMeta::new(solana_address, false),
+                              AccountMeta::new_readonly(system_program::id(), false)])
+    };
+    let finalize_message = Message::new(&[instruction], Some(&config.signers[0].pubkey()));
+    let (blockhash, fee_calculator, _) = rpc_client
+        .get_recent_blockhash_with_commitment(config.commitment)?
+        .value;
+    println!("msg: {:x?}", finalize_message);
+
+    check_account_for_fee(
+        rpc_client,
+        &config.signers[0].pubkey(),
+        &fee_calculator,
+        &finalize_message)?;
+    println!("Check success");
+
+    let mut finalize_tx = Transaction::new_unsigned(finalize_message);
+    println!("trx: {:x?}", finalize_tx);
+
+    finalize_tx.try_sign(&[config.signers[0]], blockhash)?;
+    println!("signed: {:x?}", finalize_tx);
+
+    rpc_client
+        .send_and_confirm_transaction_with_spinner_and_config(
+            &finalize_tx,
+            config.commitment,
+            RpcSendTransactionConfig {
+                skip_preflight: true,
+                ..RpcSendTransactionConfig::default()
+            },
+        )
+        .map_err(|e| {
+            CliError::DynamicProgramError(format!("Create ethereum account failed: {}", e))
+        })?;
+
+    Ok(json!({
+        "solana": format!("{}", solana_address),
+        "ether": format!("{}", hex::encode(ether_address)),
+        "nonce": nonce,
+    }).to_string())
+}
+
 fn process_deploy(
     rpc_client: &RpcClient,
     config: &CliConfig,
@@ -1169,37 +1287,266 @@ fn process_deploy(
     let seed = Seed::new(&mnemonic, "");
     let new_keypair = keypair_from_seed(seed.as_bytes())?;
 
-    let result = do_process_deploy(
-        rpc_client,
-        config,
-        program_location,
-        address,
-        use_deprecated_loader,
-        allow_excessive_balance,
-        use_evm_loader,
-        new_keypair,
-    );
-
-    if result.is_err() && address.is_none() {
-        let phrase: &str = mnemonic.phrase();
-        let divider = String::from_utf8(vec![b'='; phrase.len()]).unwrap();
-        eprintln!(
-            "{}\nTo reuse this address, recover the ephemeral keypair file with",
-            divider
+    if let Some(evm_loader) = use_evm_loader {
+        do_process_ether_deploy(
+            rpc_client,
+            config,
+            program_location,
+            address,
+            allow_excessive_balance,
+            evm_loader,
+        )
+    } else {
+        let result = do_process_deploy(
+            rpc_client,
+            config,
+            program_location,
+            address,
+            use_deprecated_loader,
+            allow_excessive_balance,
+            new_keypair,
         );
-        eprintln!(
-            "`solana-keygen recover` and the following {}-word seed phrase,",
-            WORDS
-        );
-        eprintln!(
-            "then pass it as the [PROGRAM_ADDRESS_SIGNER] argument to `solana deploy ...`\n{}\n{}\n{}",
-            divider, phrase, divider
-        );
+    
+        if result.is_err() && address.is_none() {
+            let phrase: &str = mnemonic.phrase();
+            let divider = String::from_utf8(vec![b'='; phrase.len()]).unwrap();
+            eprintln!(
+                "{}\nTo reuse this address, recover the ephemeral keypair file with",
+                divider
+            );
+            eprintln!(
+                "`solana-keygen recover` and the following {}-word seed phrase,",
+                WORDS
+            );
+            eprintln!(
+                "then pass it as the [PROGRAM_ADDRESS_SIGNER] argument to `solana deploy ...`\n{}\n{}\n{}",
+                divider, phrase, divider
+            );
+        }
+        result
     }
-    result
 }
 
-fn do_process_deploy(
+fn read_program_data(program_location: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut file = File::open(program_location).map_err(|err| {
+        CliError::DynamicProgramError(format!("Unable to open program file: {}", err))
+    })?;
+    let mut program_data = Vec::new();
+    file.read_to_end(&mut program_data).map_err(|err| {
+        CliError::DynamicProgramError(format!("Unable to read program file: {}", err))
+    })?;
+
+    Ok(program_data)
+}
+
+fn do_process_ether_deploy(
+    rpc_client: &RpcClient,
+    config: &CliConfig,
+    program_location: &str,
+    address: Option<SignerIndex>,
+    allow_excessive_balance: bool,
+    loader_id: &Pubkey,
+) -> ProcessResult {
+    let program_data = read_program_data(program_location)?;
+    let program_data_len = program_data.len() + 2*1024;
+    let minimum_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
+
+    let creator = config.signers[0];
+    let signers = [creator];
+
+    let (program_id, ether, nonce) = {
+        use sha3::{Keccak256, Digest};
+        use primitive_types::{H160, H256};
+        let code_hash = Keccak256::digest(&program_data);
+        let mut hasher = Keccak256::new();
+        hasher.input(&[0xff]);
+        hasher.input(&[0xffu8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+        hasher.input(&creator.pubkey().to_bytes());
+        hasher.input(&code_hash.as_slice());
+        let ether: H160 = H256::from_slice(hasher.result().as_slice()).into();
+        let seeds = [ether.as_bytes()];
+        let (address, nonce) = Pubkey::find_program_address(&seeds[..], loader_id);
+        println!("Creator: {}, code_hash: {}", &hex::encode(&creator.pubkey().to_bytes()), &hex::encode(code_hash.as_slice()));
+        (address, ether, nonce)
+    };
+
+    println!("Create account: {} with {} {}", program_id, ether, nonce);
+
+    let make_create_account_instruction = |balance: u64, data_size: u64| {
+        use solana_sdk::instruction::AccountMeta;
+        Instruction::new(
+            *loader_id,
+            &(2u32, balance, data_size, ether.as_fixed_bytes(), nonce),
+            vec![AccountMeta::new(creator.pubkey(), true),
+                 AccountMeta::new(program_id, false),
+                 AccountMeta::new_readonly(system_program::id(), false),]
+        )
+    };
+/*        system_instruction::create_account(
+            &creator.pubkey(),
+            &program_id,
+            balance,
+            data_size,
+            &loader_id,
+        )
+    };*/
+
+    let make_write_instruction = |offset: u32, bytes: Vec<u8>| -> Instruction {
+        use loader_instruction::LoaderInstruction;
+        use solana_sdk::instruction::AccountMeta;
+        Instruction::new(
+            *loader_id,
+            &LoaderInstruction::Write {offset, bytes},
+            vec![AccountMeta::new(program_id, false),
+                 AccountMeta::new(creator.pubkey(), true)]
+        )
+    };
+
+    let make_finalize_instruction = || -> Instruction {
+        use loader_instruction::LoaderInstruction;
+        use solana_sdk::instruction::AccountMeta;
+        use solana_sdk::sysvar::rent;
+        use solana_sdk::sysvar::clock;
+        Instruction::new(
+            *loader_id,
+            &LoaderInstruction::Finalize,
+            vec![AccountMeta::new(program_id, false),
+                 AccountMeta::new(creator.pubkey(), true),
+                 AccountMeta::new(rent::id(), false),
+                 AccountMeta::new(clock::id(), false)]
+        )
+    };
+
+
+    // Check program account to see if partial initialization has occurred
+    let (initial_instructions, balance_needed) = if let Some(account) = rpc_client
+        .get_account_with_commitment(&program_id, config.commitment)?
+        .value
+    {
+        return Err(CliError::DynamicProgramError("Account already exist".to_string()).into());
+    } else {
+        (
+/*            vec![system_instruction::create_account(
+                &config.signers[0].pubkey(),
+                &program_id,
+                minimum_balance,
+                program_data_len as u64,
+                &loader_id,
+            )],*/
+            [make_create_account_instruction(minimum_balance, program_data_len as u64)],
+            minimum_balance,
+        )
+    };
+
+    println!("Initialize instructions: {:x?}", initial_instructions);
+
+    let initial_message = Message::new(&initial_instructions, Some(&config.signers[0].pubkey()));
+    let mut messages: Vec<&Message> = Vec::new();
+    messages.push(&initial_message);
+
+    let mut write_messages = vec![];
+
+    let mut code_len = Vec::new();
+    code_len.extend_from_slice(&(program_data.len() as u64).to_le_bytes());
+    let message = Message::new(&[make_write_instruction(0u32, code_len)], Some(&creator.pubkey()));
+    write_messages.push(message);
+
+    // Write code
+    for (chunk, i) in program_data.chunks(DATA_CHUNK_SIZE).zip(0..) {
+        let message = Message::new(&[make_write_instruction((8+i*DATA_CHUNK_SIZE) as u32, chunk.to_vec())], Some(&creator.pubkey()));
+        write_messages.push(message);
+    }
+    let mut write_message_refs = vec![];
+    for message in write_messages.iter() {write_message_refs.push(message);}
+    messages.append(&mut write_message_refs);
+
+    //let finalize_instruction = loader_instruction::finalize_evm(&&config.signers[0].pubkey(), &program_id, &loader_id);
+    //let finalize_message = Message::new(&[instruction], Some(&signers[0].pubkey()));
+    let finalize_message = Message::new(&[make_finalize_instruction()], Some(&creator.pubkey()));
+    messages.push(&finalize_message);
+
+    let (blockhash, fee_calculator, _) = rpc_client
+        .get_recent_blockhash_with_commitment(config.commitment)?
+        .value;
+
+    check_account_for_spend_multiple_fees_with_commitment(
+        rpc_client,
+        &config.signers[0].pubkey(),
+        balance_needed,
+        &fee_calculator,
+        &messages,
+        config.commitment,
+    )?;
+
+    {  // Send initialize message
+        trace!("Creating or modifying program account");
+        let mut initial_transaction = Transaction::new_unsigned(initial_message);
+        initial_transaction.try_sign(&signers, blockhash)?;
+        let result = rpc_client.send_and_confirm_transaction_with_spinner_and_config(
+            &initial_transaction,
+            config.commitment,
+            config.send_transaction_config,
+        );
+        log_instruction_custom_error::<SystemError>(result, &config).map_err(|err| {
+            CliError::DynamicProgramError(format!("Program account allocation failed: {}", err))
+        })?;
+    }
+
+    {  // Send write message
+        let (blockhash, _, last_valid_slot) = rpc_client
+            .get_recent_blockhash_with_commitment(config.commitment)?
+            .value;
+    
+        let mut write_transactions = vec![];
+        for message in write_messages.into_iter() {
+            let mut tx = Transaction::new_unsigned(message);
+            tx.try_sign(&signers, blockhash)?;
+            write_transactions.push(tx);
+        }
+    
+        trace!("Writing program data");
+        send_and_confirm_transactions_with_spinner(
+            &rpc_client,
+            write_transactions,
+            &signers,
+            config.commitment,
+            last_valid_slot,
+        )
+        .map_err(|err| {
+            CliError::DynamicProgramError(format!("Data writes to program account failed: {}", err))
+        })?;
+    }
+
+    { // Send finalize message
+        let (blockhash, _, _) = rpc_client
+            .get_recent_blockhash_with_commitment(config.commitment)?
+            .value;
+        let mut finalize_tx = Transaction::new_unsigned(finalize_message);
+        finalize_tx.try_sign(&signers, blockhash)?;
+    
+        trace!("Finalizing program account");
+        rpc_client
+            .send_and_confirm_transaction_with_spinner_and_config(
+                &finalize_tx,
+                config.commitment,
+                RpcSendTransactionConfig {
+                    skip_preflight: true,
+                    ..RpcSendTransactionConfig::default()
+                },
+            )
+            .map_err(|e| {
+                CliError::DynamicProgramError(format!("Finalizing program account failed: {}", e))
+            })?;
+    }
+
+    Ok(json!({
+        "programId": format!("{}", program_id),
+        "ethereum": format!("{:?}", ether),
+    })
+    .to_string())
+}
+
+fn do_process_deploy2(
     rpc_client: &RpcClient,
     config: &CliConfig,
     program_location: &str,
@@ -1214,32 +1561,21 @@ fn do_process_deploy(
     } else {
         &new_keypair
     };
-    let mut file = File::open(program_location).map_err(|err| {
-        CliError::DynamicProgramError(format!("Unable to open program file: {}", err))
-    })?;
-    let mut program_data = Vec::new();
-    file.read_to_end(&mut program_data).map_err(|err| {
-        CliError::DynamicProgramError(format!("Unable to read program file: {}", err))
-    })?;
+
+    let program_data = read_program_data(program_location)?;
 
     if !use_evm_loader.is_some() {
         EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, false)))
             .map_err(|err| CliError::DynamicProgramError(format!("ELF error: {}", err)))?;
     }
 
-    let loader_id = if use_evm_loader.is_some() {
-        use_evm_loader.unwrap()
-    } else if use_deprecated_loader {
+    let loader_id = if use_deprecated_loader {
         bpf_loader_deprecated::id()
     } else {
         bpf_loader::id()
     };
 
-    let program_data_len = if use_evm_loader.is_some() {
-        program_data.len() + 10*1024
-    } else {
-        program_data.len()
-    };
+    let program_data_len = program_data.len();
     let minimum_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
     let signers = [config.signers[0], program_id];
 
@@ -1312,13 +1648,6 @@ fn do_process_deploy(
         None
     };
 
-    // Build transactions to calculate fees
-    let mut messages: Vec<&Message> = Vec::new();
-
-    if let Some(message) = &initial_message {
-        messages.push(message);
-    }
-
     let mut write_messages = vec![];
     // Write code len
     let mut header_size = 0usize;
@@ -1346,6 +1675,14 @@ fn do_process_deploy(
         let message = Message::new(&[instruction], Some(&signers[0].pubkey()));
         write_messages.push(message);
     }
+
+    // Build transactions to calculate fees
+    let mut messages: Vec<&Message> = Vec::new();
+
+    if let Some(message) = &initial_message {
+        messages.push(message);
+    }
+
     let mut write_message_refs = vec![];
     for message in write_messages.iter() {
         write_message_refs.push(message);
@@ -1447,6 +1784,222 @@ fn do_process_deploy(
     .to_string())
 }
 
+fn do_process_deploy(
+    rpc_client: &RpcClient,
+    config: &CliConfig,
+    program_location: &str,
+    address: Option<SignerIndex>,
+    use_deprecated_loader: bool,
+    allow_excessive_balance: bool,
+    new_keypair: Keypair,
+) -> ProcessResult {
+    let program_id = if let Some(i) = address {
+        config.signers[i]
+    } else {
+        &new_keypair
+    };
+    let mut file = File::open(program_location).map_err(|err| {
+        CliError::DynamicProgramError(format!("Unable to open program file: {}", err))
+    })?;
+    let mut program_data = Vec::new();
+    file.read_to_end(&mut program_data).map_err(|err| {
+        CliError::DynamicProgramError(format!("Unable to read program file: {}", err))
+    })?;
+
+    EbpfVm::create_executable_from_elf(&program_data, Some(|x| bpf_verifier::check(x, false)))
+        .map_err(|err| CliError::DynamicProgramError(format!("ELF error: {}", err)))?;
+
+    let loader_id = if use_deprecated_loader {
+        bpf_loader_deprecated::id()
+    } else {
+        bpf_loader::id()
+    };
+
+    let minimum_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data.len())?;
+    let signers = [config.signers[0], program_id];
+
+    // Check program account to see if partial initialization has occurred
+    let (initial_instructions, balance_needed) = if let Some(account) = rpc_client
+        .get_account_with_commitment(&program_id.pubkey(), config.commitment)?
+        .value
+    {
+        let mut instructions: Vec<Instruction> = vec![];
+        let mut balance_needed = 0;
+        if account.executable {
+            return Err(CliError::DynamicProgramError(
+                "Program account is already executable".to_string(),
+            )
+            .into());
+        }
+        if account.owner != loader_id && !system_program::check_id(&account.owner) {
+            return Err(CliError::DynamicProgramError(
+                "Program account is already owned by another account".to_string(),
+            )
+            .into());
+        }
+
+        if account.data.is_empty() && system_program::check_id(&account.owner) {
+            instructions.push(system_instruction::allocate(
+                &program_id.pubkey(),
+                program_data.len() as u64,
+            ));
+            if account.owner != loader_id {
+                instructions.push(system_instruction::assign(&program_id.pubkey(), &loader_id));
+            }
+        }
+        if account.lamports < minimum_balance {
+            let balance = minimum_balance - account.lamports;
+            instructions.push(system_instruction::transfer(
+                &config.signers[0].pubkey(),
+                &program_id.pubkey(),
+                balance,
+            ));
+            balance_needed = balance;
+        } else if account.lamports > minimum_balance
+            && system_program::check_id(&account.owner)
+            && !allow_excessive_balance
+        {
+            return Err(CliError::DynamicProgramError(format!(
+                "Program account has a balance: {:?}; it may already be in use",
+                Sol(account.lamports)
+            ))
+            .into());
+        }
+        (instructions, balance_needed)
+    } else {
+        (
+            vec![system_instruction::create_account(
+                &config.signers[0].pubkey(),
+                &program_id.pubkey(),
+                minimum_balance,
+                program_data.len() as u64,
+                &loader_id,
+            )],
+            minimum_balance,
+        )
+    };
+    let initial_message = if !initial_instructions.is_empty() {
+        Some(Message::new(
+            &initial_instructions,
+            Some(&config.signers[0].pubkey()),
+        ))
+    } else {
+        None
+    };
+
+    // Build transactions to calculate fees
+    let mut messages: Vec<&Message> = Vec::new();
+
+    if let Some(message) = &initial_message {
+        messages.push(message);
+    }
+
+    let mut write_messages = vec![];
+    for (chunk, i) in program_data.chunks(DATA_CHUNK_SIZE).zip(0..) {
+        let instruction = loader_instruction::write(
+            &program_id.pubkey(),
+            &loader_id,
+            (i * DATA_CHUNK_SIZE) as u32,
+            chunk.to_vec(),
+        );
+        let message = Message::new(&[instruction], Some(&signers[0].pubkey()));
+        write_messages.push(message);
+    }
+    let mut write_message_refs = vec![];
+    for message in write_messages.iter() {
+        write_message_refs.push(message);
+    }
+    messages.append(&mut write_message_refs);
+
+    let instruction = loader_instruction::finalize(&program_id.pubkey(), &loader_id);
+    let finalize_message = Message::new(&[instruction], Some(&signers[0].pubkey()));
+    messages.push(&finalize_message);
+
+    let (blockhash, fee_calculator, _) = rpc_client
+        .get_recent_blockhash_with_commitment(config.commitment)?
+        .value;
+
+    check_account_for_spend_multiple_fees_with_commitment(
+        rpc_client,
+        &config.signers[0].pubkey(),
+        balance_needed,
+        &fee_calculator,
+        &messages,
+        config.commitment,
+    )?;
+
+    if let Some(message) = initial_message {
+        trace!("Creating or modifying program account");
+        let num_required_signatures = message.header.num_required_signatures;
+
+        let mut initial_transaction = Transaction::new_unsigned(message);
+        // Most of the initial_transaction combinations require both the fee-payer and new program
+        // account to sign the transaction. One (transfer) only requires the fee-payer signature.
+        // This check is to ensure signing does not fail on a KeypairPubkeyMismatch error from an
+        // extraneous signature.
+        if num_required_signatures == 2 {
+            initial_transaction.try_sign(&signers, blockhash)?;
+        } else {
+            initial_transaction.try_sign(&[signers[0]], blockhash)?;
+        }
+        let result = rpc_client.send_and_confirm_transaction_with_spinner_and_config(
+            &initial_transaction,
+            config.commitment,
+            config.send_transaction_config,
+        );
+        log_instruction_custom_error::<SystemError>(result, &config).map_err(|err| {
+            CliError::DynamicProgramError(format!("Program account allocation failed: {}", err))
+        })?;
+    }
+
+    let (blockhash, _, last_valid_slot) = rpc_client
+        .get_recent_blockhash_with_commitment(config.commitment)?
+        .value;
+
+    let mut write_transactions = vec![];
+    for message in write_messages.into_iter() {
+        let mut tx = Transaction::new_unsigned(message);
+        tx.try_sign(&signers, blockhash)?;
+        write_transactions.push(tx);
+    }
+
+    trace!("Writing program data");
+    send_and_confirm_transactions_with_spinner(
+        &rpc_client,
+        write_transactions,
+        &signers,
+        config.commitment,
+        last_valid_slot,
+    )
+    .map_err(|err| {
+        CliError::DynamicProgramError(format!("Data writes to program account failed: {}", err))
+    })?;
+
+    let (blockhash, _, _) = rpc_client
+        .get_recent_blockhash_with_commitment(config.commitment)?
+        .value;
+    let mut finalize_tx = Transaction::new_unsigned(finalize_message);
+    finalize_tx.try_sign(&signers, blockhash)?;
+
+    trace!("Finalizing program account");
+    rpc_client
+        .send_and_confirm_transaction_with_spinner_and_config(
+            &finalize_tx,
+            config.commitment,
+            RpcSendTransactionConfig {
+                skip_preflight: true,
+                ..RpcSendTransactionConfig::default()
+            },
+        )
+        .map_err(|e| {
+            CliError::DynamicProgramError(format!("Finalizing program account failed: {}", e))
+        })?;
+
+    Ok(json!({
+        "programId": format!("{}", program_id.pubkey()),
+    })
+    .to_string())
+}
 #[allow(clippy::too_many_arguments)]
 fn process_transfer(
     rpc_client: &RpcClient,
@@ -1703,6 +2256,9 @@ pub fn process_command(config: &CliConfig) -> ProcessResult {
             *allow_excessive_balance,
             use_evm_loader,
         ),
+
+        CliCommand::CreateEtherAccount {ether_address, lamports, space, evm_loader} =>
+            process_create_ether_account(&rpc_client, config, &ether_address, *lamports, *space, evm_loader),
 
         // Stake Commands
 
@@ -2304,6 +2860,40 @@ pub fn app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> App<'ab, '
                         "From (base) key, [default: cli config keypair]. "),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("create-ether-account")
+                .about("Create ethereum account")
+                .arg(
+                    Arg::with_name("evm_loader")
+                        .index(1)
+                        .value_name("evm_loader")
+                        .takes_value(true)
+                        .required(true)
+                        .help("EVM loader"),
+                )
+                .arg(
+                    Arg::with_name("ether")
+                        .index(2)
+                        .value_name("ether")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Ethereum address"),
+                )
+                .arg(
+                    Arg::with_name("lamports")
+                        .value_name("lamports")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Lamports for transfer to new account"),
+                )
+                .arg(
+                    Arg::with_name("space")
+                        .value_name("space")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Length of data for new account"),
+                )
+            )
         .subcommand(
             SubCommand::with_name("deploy")
                 .about("Deploy a program")
