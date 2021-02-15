@@ -1409,19 +1409,22 @@ fn do_process_ether_deploy(
     let creator = config.signers[0];
     let signers = [creator];
 
-    let (caller_id, caller_ether, caller_nonce) = {
-        let ether: H160 = H256::from_slice(Keccak256::digest(&creator.pubkey().to_bytes()).as_slice()).into();
-        let seeds = [ether.as_bytes()];
-        let (address, nonce) = Pubkey::find_program_address(&seeds[..], loader_id);
-        println!("Caller: ether {}, nonce {}, solana {}", &ether, nonce, address);
-        (address, ether, nonce)
-    };
+    let creator_ether: H160 = H256::from_slice(Keccak256::digest(&creator.pubkey().to_bytes()).as_slice()).into();
+    println!("Creator: ether {}, solana {}", creator_ether, creator.pubkey());
+
+    // let (caller_id, caller_ether, caller_nonce) = {
+    //     let ether: H160 = H256::from_slice(Keccak256::digest(&creator.pubkey().to_bytes()).as_slice()).into();
+    //     let seeds = [ether.as_bytes()];
+    //     let (address, nonce) = Pubkey::find_program_address(&seeds[..], loader_id);
+    //     println!("Caller: ether {}, nonce {}, solana {}", &ether, nonce, address);
+    //     (address, ether, nonce)
+    // };
 
     let (program_id, ether, nonce) = {
         let code_hash = Keccak256::digest(&program_data);
         let mut hasher = Keccak256::new();
         hasher.input(&[0xff]);
-        hasher.input(&caller_ether.as_bytes());
+        hasher.input(&creator_ether.as_bytes());
         hasher.input(&[0u8; 32]);
         hasher.input(&code_hash.as_slice());
         let ether: H160 = H256::from_slice(hasher.result().as_slice()).into();
@@ -1472,7 +1475,7 @@ fn do_process_ether_deploy(
             *loader_id,
             &LoaderInstruction::Finalize,
             vec![AccountMeta::new(program_id, false),
-                 AccountMeta::new(caller_id, false),
+                //  AccountMeta::new(caller_id, false),
                  AccountMeta::new(creator.pubkey(), true),
                  AccountMeta::new(clock::id(), false),
                  AccountMeta::new(rent::id(), false),
@@ -1489,11 +1492,11 @@ fn do_process_ether_deploy(
         return Err(CliError::DynamicProgramError("Account already exist".to_string()).into());
     } else {
         let mut instructions = Vec::new();
-        if let Some(account) = rpc_client.get_account_with_commitment(&caller_id, config.commitment)?.value {
-            // TODO Check caller account
-        } else {
-            instructions.push(make_create_account_instruction(&caller_id, &caller_ether, caller_nonce, minimum_caller_balance, 0));
-        }
+        // if let Some(account) = rpc_client.get_account_with_commitment(&caller_id, config.commitment)?.value {
+        //     // TODO Check caller account
+        // } else {
+        //     instructions.push(make_create_account_instruction(&caller_id, &caller_ether, caller_nonce, minimum_caller_balance, 0));
+        // }
 /*            vec![system_instruction::create_account(
                 &config.signers[0].pubkey(),
                 &program_id,
