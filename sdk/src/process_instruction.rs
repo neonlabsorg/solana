@@ -113,14 +113,14 @@ impl BpfComputeBudget {
             sha256_base_cost: 85,
             sha256_byte_cost: 1,
             max_call_depth: 20,
-            stack_frame_size: 4_096,
+            stack_frame_size: 4_096*1024,
             log_pubkey_units: 0,
             max_cpi_instruction_size: std::usize::MAX,
         };
 
         if feature_set.is_active(&bpf_compute_budget_balancing::id()) {
             bpf_compute_budget = BpfComputeBudget {
-                max_units: 200_000,
+                max_units: 200_000_000,
                 log_units: 100,
                 log_64_units: 100,
                 create_program_address_units: 1500,

@@ -95,7 +95,7 @@ use crate::allocator_bump::BPFAllocator;
 
 /// Default program heap size, allocators
 /// are expected to enforce this
-const DEFAULT_HEAP_SIZE: usize = 32 * 1024;
+const DEFAULT_HEAP_SIZE: usize = 32 * 1024 * 1024;
 
 pub fn register_syscalls<'a>(
     loader_id: &'a Pubkey,
