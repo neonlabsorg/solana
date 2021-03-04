@@ -3,7 +3,7 @@ set -euo pipefail
 
 REVISION=$(git rev-parse HEAD)
 
-docker build -t cyberway/solana:${REVISION} .
+docker build -t cybercoredev/solana:${REVISION} .
 
 #if [[ ${BUILDKITE_BRANCH} == "master" ]]; then
 #    BUILDTYPE="stable"

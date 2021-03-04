@@ -15,7 +15,7 @@ else
     TAG=${BUILDKITE_BRANCH}
 fi
 
-docker pull cyberway/solana:${REVISION}
-docker tag cyberway/solana:${REVISION} cyberway/solana:${TAG}
-docker push cyberway/solana:${TAG}
+docker pull cybercoredev/solana:${REVISION}
+docker tag cybercoredev/solana:${REVISION} cybercoredev/solana:${TAG}
+docker push cybercoredev/solana:${TAG}
 

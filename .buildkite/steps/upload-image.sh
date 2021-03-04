@@ -7,6 +7,6 @@ docker images
 
 docker login -u=${DHUBU} -p=${DHUBP}
 
-docker push cyberway/solana:${REVISION}
+docker push cybercoredev/solana:${REVISION}
 
 
