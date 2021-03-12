@@ -128,7 +128,7 @@ unsafe impl std::alloc::GlobalAlloc for BumpAllocator {
 }
 
 /// Maximum number of bytes a program may add to an account during a single realloc
-pub const MAX_PERMITTED_DATA_INCREASE: usize = 1_024 * 10;
+pub const MAX_PERMITTED_DATA_INCREASE: usize = 1_024 * 32;
 
 /// Deserialize the input arguments
 ///
