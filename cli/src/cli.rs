@@ -1479,6 +1479,7 @@ fn do_process_ether_deploy(
                  AccountMeta::new(creator.pubkey(), true),
                  AccountMeta::new(clock::id(), false),
                  AccountMeta::new(rent::id(), false),
+                 AccountMeta::new(*loader_id, false),
                 ]
         )
     };
