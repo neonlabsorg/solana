@@ -1436,13 +1436,37 @@ fn do_process_ether_deploy(
 
     println!("Create account: {} with {} {}", program_id, ether, nonce);
 
+
+    let (program_code, prog_nonce) = {
+        let seeds = [ether.as_bytes(), "code".as_bytes()];
+        // let seeds_vec = seeds.to_vec();
+        // let seeds_slice = seeds_vec.as_slice();
+        // println!("{:#04X?}", seeds_slice);
+        let (address, nonce) = Pubkey::find_program_address(&seeds[..], loader_id);
+        (address, nonce)
+    };
+
+    println!("Create code account: {}", &program_code.to_string());
+
+    let make_create_code_account_instruction = |acc: &Pubkey, ether: &H160, nonce: u8, balance: u64, data_size: u64| {
+        use solana_sdk::instruction::AccountMeta;
+        Instruction::new(
+            *loader_id,
+            &(33u32, balance, data_size, ether.as_fixed_bytes(), nonce),
+            vec![AccountMeta::new(creator.pubkey(), true),
+                 AccountMeta::new(*acc, false),
+                 AccountMeta::new_readonly(system_program::id(), false),]
+        )
+    };
+
     let make_create_account_instruction = |acc: &Pubkey, ether: &H160, nonce: u8, balance: u64, data_size: u64| {
         use solana_sdk::instruction::AccountMeta;
         Instruction::new(
             *loader_id,
-            &(2u32, balance, data_size, ether.as_fixed_bytes(), nonce),
+            &(22u32, balance, data_size, ether.as_fixed_bytes(), nonce),
             vec![AccountMeta::new(creator.pubkey(), true),
                  AccountMeta::new(*acc, false),
+                 AccountMeta::new(program_code, false),
                  AccountMeta::new_readonly(system_program::id(), false),]
         )
     };
@@ -1462,6 +1486,7 @@ fn do_process_ether_deploy(
             *loader_id,
             &LoaderInstruction::Write {offset, bytes},
             vec![AccountMeta::new(program_id, false),
+                 AccountMeta::new(program_code, false),
                  AccountMeta::new(creator.pubkey(), true)]
         )
     };
@@ -1475,6 +1500,7 @@ fn do_process_ether_deploy(
             *loader_id,
             &LoaderInstruction::Finalize,
             vec![AccountMeta::new(program_id, false),
+                 AccountMeta::new(program_code, false),
                 //  AccountMeta::new(caller_id, false),
                  AccountMeta::new(creator.pubkey(), true),
                  AccountMeta::new(clock::id(), false),
@@ -1510,9 +1536,13 @@ fn do_process_ether_deploy(
     };
 
     println!("Initialize instructions: {:x?}", initial_instructions);
+    
+    let program_code_instruction = make_create_code_account_instruction(&program_code, &ether, prog_nonce, minimum_balance, program_data_len as u64);
+    let program_code_message = Message::new(&[program_code_instruction], Some(&config.signers[0].pubkey()));   
 
     let initial_message = Message::new(&initial_instructions, Some(&config.signers[0].pubkey()));
     let mut messages: Vec<&Message> = Vec::new();
+    messages.push(&program_code_message);
     messages.push(&initial_message);
 
     let mut write_messages = vec![];
@@ -1548,6 +1578,20 @@ fn do_process_ether_deploy(
         &messages,
         config.commitment,
     )?;
+
+    {  
+        println!("Create code account");
+        let mut program_code_transaction = Transaction::new_unsigned(program_code_message);
+        program_code_transaction.try_sign(&signers, blockhash)?;
+        let result = rpc_client.send_and_confirm_transaction_with_spinner_and_config(
+            &program_code_transaction,
+            config.commitment,
+            config.send_transaction_config,
+        );
+        log_instruction_custom_error::<SystemError>(result, &config).map_err(|err| {
+            CliError::DynamicProgramError(format!("Program code account allocation failed: {}", err))
+        })?;
+    }
 
     {  // Send initialize message
         trace!("Creating or modifying program account");
@@ -1612,6 +1656,7 @@ fn do_process_ether_deploy(
 
     Ok(json!({
         "programId": format!("{}", program_id),
+        "codeId": format!("{}", program_code),
         "ethereum": format!("{:?}", ether),
     })
     .to_string())
