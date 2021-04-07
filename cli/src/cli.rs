@@ -1448,11 +1448,11 @@ fn do_process_ether_deploy(
 
     println!("Create code account: {}", &program_code.to_string());
 
-    let make_create_account_instruction = |acc: &Pubkey, ether: &H160, nonce: u8, balance: u64, data_size: u64| {
+    let make_create_account_instruction = |acc: &Pubkey, ether: &H160, nonce: u8, balance: u64| {
         use solana_sdk::instruction::AccountMeta;
         Instruction::new(
             *loader_id,
-            &(22u32, balance, data_size, ether.as_fixed_bytes(), nonce),
+            &(22u32, balance, 97u64, ether.as_fixed_bytes(), nonce),
             vec![AccountMeta::new(creator.pubkey(), true),
                  AccountMeta::new(*acc, false),
                  AccountMeta::new(program_code, false),
@@ -1520,7 +1520,7 @@ fn do_process_ether_deploy(
                 program_data_len as u64,
                 &loader_id,
             )],*/
-        instructions.push(make_create_account_instruction(&program_id, &ether, nonce, minimum_balance, program_data_len as u64));
+        instructions.push(make_create_account_instruction(&program_id, &ether, nonce, minimum_balance));
         (instructions, minimum_balance)
     };
 
@@ -1572,7 +1572,7 @@ fn do_process_ether_deploy(
 
     {  // Create code account
         trace!("Create code account");
-        let make_code_account_instruction = system_instruction::create_account_with_seed(&creator.pubkey(), &program_code, &creator.pubkey(), &program_seed, 10000000, 1024*1024, loader_id);
+        let make_code_account_instruction = system_instruction::create_account_with_seed(&creator.pubkey(), &program_code, &creator.pubkey(), &program_seed, 10000000, program_data_len as u64, loader_id);
         let make_code_account_message = Message::new(&[make_code_account_instruction], Some(&creator.pubkey()));
         let mut program_code_transaction = Transaction::new_unsigned(make_code_account_message);
         program_code_transaction.try_sign(&signers, blockhash)?;
