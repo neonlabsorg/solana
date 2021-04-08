@@ -1437,10 +1437,7 @@ fn do_process_ether_deploy(
     println!("Create account: {} with {} {}", program_id, ether, nonce);  
 
     let (program_code, program_seed) = {
-        let ether_string = hex::encode(ether.as_bytes());
-        let mut seed: String = ether_string[..14].to_string();
-        seed.push_str(&ether_string[40-14..]);
-        seed.push_str(&"code".to_string());
+        let seed = bs58::encode(&ether.to_fixed_bytes()).into_string();
         println!("Code account seed {} and len {}", &seed, &seed.len());
         let address = Pubkey::create_with_seed(&creator.pubkey(), &seed, loader_id).unwrap();
         (address, seed)
