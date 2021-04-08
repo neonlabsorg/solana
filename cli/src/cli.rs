@@ -1402,9 +1402,11 @@ fn do_process_ether_deploy(
     use primitive_types::{H160, H256};
 
     let program_data = read_program_data(program_location)?;
-    let program_data_len = program_data.len() + 2*1024;
-    let minimum_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
-    let minimum_caller_balance = rpc_client.get_minimum_balance_for_rent_exemption(65)?;
+    let program_data_len = 97u64;
+    let program_code_len = 32 + program_data.len() + 2*1024;
+    let minimum_balance_program = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
+    let minimum_balance_code = rpc_client.get_minimum_balance_for_rent_exemption(program_code_len)?;
+    let minimum_caller_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
 
     let creator = config.signers[0];
     let signers = [creator];
@@ -1449,7 +1451,7 @@ fn do_process_ether_deploy(
         use solana_sdk::instruction::AccountMeta;
         Instruction::new(
             *loader_id,
-            &(22u32, balance, 97u64, ether.as_fixed_bytes(), nonce),
+            &(22u32, balance, program_data_len, ether.as_fixed_bytes(), nonce),
             vec![AccountMeta::new(creator.pubkey(), true),
                  AccountMeta::new(*acc, false),
                  AccountMeta::new(program_code, false),
@@ -1498,7 +1500,7 @@ fn do_process_ether_deploy(
 
 
     // Check program account to see if partial initialization has occurred
-    let (initial_instructions, balance_needed) = if let Some(account) = rpc_client
+    let initial_instructions = if let Some(account) = rpc_client
         .get_account_with_commitment(&program_id, config.commitment)?
         .value
     {
@@ -1517,9 +1519,11 @@ fn do_process_ether_deploy(
                 program_data_len as u64,
                 &loader_id,
             )],*/
-        instructions.push(make_create_account_instruction(&program_id, &ether, nonce, minimum_balance));
-        (instructions, minimum_balance)
+        instructions.push(make_create_account_instruction(&program_id, &ether, nonce, minimum_balance_program));
+        instructions
     };
+    let balance_needed = minimum_balance_program + minimum_balance_code;
+    println!("Minimum balance: {}", balance_needed);
 
     println!("Initialize instructions: {:x?}", initial_instructions);
     
@@ -1569,7 +1573,7 @@ fn do_process_ether_deploy(
 
     {  // Create code account
         trace!("Create code account");
-        let make_code_account_instruction = system_instruction::create_account_with_seed(&creator.pubkey(), &program_code, &creator.pubkey(), &program_seed, 10000000, program_data_len as u64, loader_id);
+        let make_code_account_instruction = system_instruction::create_account_with_seed(&creator.pubkey(), &program_code, &creator.pubkey(), &program_seed, minimum_balance_code, program_code_len as u64, loader_id);
         let make_code_account_message = Message::new(&[make_code_account_instruction], Some(&creator.pubkey()));
         let mut program_code_transaction = Transaction::new_unsigned(make_code_account_message);
         program_code_transaction.try_sign(&signers, blockhash)?;
