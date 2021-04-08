@@ -1400,13 +1400,14 @@ fn do_process_ether_deploy(
 ) -> ProcessResult {
     use sha3::{Keccak256, Digest};
     use primitive_types::{H160, H256};
+    use std::convert::TryInto;
 
     let program_data = read_program_data(program_location)?;
     let program_data_len = 97u64;
     let program_code_len = 32 + program_data.len() + 2*1024;
-    let minimum_balance_program = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
+    let minimum_balance_program = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len.try_into().unwrap())?;
     let minimum_balance_code = rpc_client.get_minimum_balance_for_rent_exemption(program_code_len)?;
-    let minimum_caller_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
+    let minimum_caller_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len.try_into().unwrap())?;
 
     let creator = config.signers[0];
     let signers = [creator];
