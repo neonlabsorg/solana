@@ -1403,11 +1403,11 @@ fn do_process_ether_deploy(
     use std::convert::TryInto;
 
     let program_data = read_program_data(program_location)?;
-    let program_data_len = 97u64;
+    let program_data_len = 97;
     let program_code_len = 32 + program_data.len() + 2*1024;
-    let minimum_balance_program = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len.try_into().unwrap())?;
+    let minimum_balance_program = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
     let minimum_balance_code = rpc_client.get_minimum_balance_for_rent_exemption(program_code_len)?;
-    let minimum_caller_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len.try_into().unwrap())?;
+    let minimum_caller_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
 
     let creator = config.signers[0];
     let signers = [creator];
@@ -1452,7 +1452,7 @@ fn do_process_ether_deploy(
         use solana_sdk::instruction::AccountMeta;
         Instruction::new(
             *loader_id,
-            &(22u32, balance, program_data_len, ether.as_fixed_bytes(), nonce),
+            &(22u32, balance, 0 as u64, ether.as_fixed_bytes(), nonce),
             vec![AccountMeta::new(creator.pubkey(), true),
                  AccountMeta::new(*acc, false),
                  AccountMeta::new(program_code, false),
@@ -1473,7 +1473,7 @@ fn do_process_ether_deploy(
         let data_len: u64 = bytes.len().try_into().unwrap();
         Instruction::new(
             *loader_id,
-            &(100u32, offset, data_len, bytes.as_slice()),
+            &(100u8, offset, data_len, bytes.as_slice()),
             vec![AccountMeta::new(program_id, false),
                  AccountMeta::new(program_code, false),
                  AccountMeta::new(creator.pubkey(), true)]
@@ -1526,10 +1526,7 @@ fn do_process_ether_deploy(
     let balance_needed = minimum_balance_program + minimum_balance_code;
     println!("Minimum balance: {}", balance_needed);
 
-    println!("Initialize instructions: {:x?}", initial_instructions);
-    
-    // let program_code_instruction = make_create_code_account_instruction(&program_code, &ether, prog_nonce, minimum_balance, program_data_len as u64);
-    // let program_code_message = Message::new(&[program_code_instruction], Some(&config.signers[0].pubkey()));   
+    println!("Initialize instructions: {:x?}", initial_instructions);  
 
     let initial_message = Message::new(&initial_instructions, Some(&config.signers[0].pubkey()));
     let mut messages: Vec<&Message> = Vec::new();
