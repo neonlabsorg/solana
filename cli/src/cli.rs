@@ -1470,10 +1470,9 @@ fn do_process_ether_deploy(
 
     let make_write_instruction = |offset: u32, bytes: Vec<u8>| -> Instruction {
         use solana_sdk::instruction::AccountMeta;
-        let data_len: u64 = bytes.len().try_into().unwrap();
         Instruction::new(
             *loader_id,
-            &(100u8, offset, data_len, bytes.as_slice()),
+            &(100u8, offset, bytes.as_slice()),
             vec![AccountMeta::new(program_id, false),
                  AccountMeta::new(program_code, false),
                  AccountMeta::new(creator.pubkey(), true)]
