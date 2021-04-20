@@ -1403,7 +1403,7 @@ fn do_process_ether_deploy(
     use std::convert::TryInto;
 
     let program_data = read_program_data(program_location)?;
-    let program_data_len = 97;
+    let program_data_len = 1+20+1+8+32+32;
     let program_code_len = 32 + program_data.len() + 2*1024;
     let minimum_balance_program = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
     let minimum_balance_code = rpc_client.get_minimum_balance_for_rent_exemption(program_code_len)?;
