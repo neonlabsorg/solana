@@ -1452,7 +1452,7 @@ fn do_process_ether_deploy(
         use solana_sdk::instruction::AccountMeta;
         Instruction::new(
             *loader_id,
-            &(22u32, balance, 0 as u64, ether.as_fixed_bytes(), nonce),
+            &(2u32, balance, 0 as u64, ether.as_fixed_bytes(), nonce),
             vec![AccountMeta::new(creator.pubkey(), true),
                  AccountMeta::new(*acc, false),
                  AccountMeta::new(program_code, false),
@@ -1469,12 +1469,12 @@ fn do_process_ether_deploy(
     };*/
 
     let make_write_instruction = |offset: u32, bytes: Vec<u8>| -> Instruction {
+        use loader_instruction::LoaderInstruction;
         use solana_sdk::instruction::AccountMeta;
         Instruction::new(
             *loader_id,
-            &(100u8, offset, bytes.as_slice()),
-            vec![AccountMeta::new(program_id, false),
-                 AccountMeta::new(program_code, false),
+            &LoaderInstruction::Write {offset, bytes},
+            vec![AccountMeta::new(program_code, false),
                  AccountMeta::new(creator.pubkey(), true)]
         )
     };
