@@ -1531,10 +1531,7 @@ fn do_process_ether_deploy(
 
     let initial_message = Message::new(&initial_instructions, Some(&config.signers[0].pubkey()));
     let mut messages: Vec<&Message> = Vec::new();
-    // messages.push(&program_code_message);
     messages.push(&initial_message);
-    
-    // messages.push(&create_acc_message);
 
     let mut write_messages = vec![];
 
