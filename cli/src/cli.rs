@@ -1402,12 +1402,14 @@ fn do_process_ether_deploy(
     use primitive_types::{H160, H256};
     use std::convert::TryInto;
 
+    let ACCOUNT_HEADER_SIZE = 1+20+1+8+32+32;
+    let CONTRACT_HEADER_SIZE = 1+32+4;
+
     let program_data = read_program_data(program_location)?;
-    let program_data_len = 1+20+1+8+32+32;
-    let program_code_len = 32 + program_data.len() + 2*1024;
-    let minimum_balance_program = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
+    let program_code_len = CONTRACT_HEADER_SIZE + program_data.len() + 2*1024;
+    let minimum_balance_program = rpc_client.get_minimum_balance_for_rent_exemption(ACCOUNT_HEADER_SIZE)?;
     let minimum_balance_code = rpc_client.get_minimum_balance_for_rent_exemption(program_code_len)?;
-    let minimum_caller_balance = rpc_client.get_minimum_balance_for_rent_exemption(program_data_len)?;
+    let minimum_caller_balance = rpc_client.get_minimum_balance_for_rent_exemption(ACCOUNT_HEADER_SIZE)?;
 
     let creator = config.signers[0];
     let signers = [creator];
