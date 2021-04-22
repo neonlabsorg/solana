@@ -1554,7 +1554,7 @@ fn do_process_ether_deploy(
     let finalize_message = Message::new(&[make_finalize_instruction()], Some(&creator.pubkey()));
     messages.push(&finalize_message);
 
-    let (blockhash, fee_calculator, _) = rpc_client
+    let (_, fee_calculator, _) = rpc_client
         .get_recent_blockhash_with_commitment(config.commitment)?
         .value;
 
@@ -1567,32 +1567,40 @@ fn do_process_ether_deploy(
         config.commitment,
     )?;
 
-    {  // Create code account
-        trace!("Create code account");
-        let make_code_account_instruction = system_instruction::create_account_with_seed(&creator.pubkey(), &program_code, &creator.pubkey(), &program_seed, minimum_balance_code, program_code_len as u64, loader_id);
-        let make_code_account_message = Message::new(&[make_code_account_instruction], Some(&creator.pubkey()));
-        let mut program_code_transaction = Transaction::new_unsigned(make_code_account_message);
-        program_code_transaction.try_sign(&signers, blockhash)?;
-        let result = rpc_client.send_and_confirm_transaction_with_spinner_and_config(
-            &program_code_transaction,
-            config.commitment,
-            config.send_transaction_config,
-        );
-        log_instruction_custom_error::<SystemError>(result, &config).map_err(|err| {
-            CliError::DynamicProgramError(format!("Program code account allocation failed: {}", err))
-        })?;
-    }
-
     {  // Send initialize message
+        let (blockhash, _, last_valid_slot) = rpc_client
+            .get_recent_blockhash_with_commitment(config.commitment)?
+            .value;
+    
+        let mut initial_transactions = vec![];
+
+        trace!("Create code account");
+        let program_code_transaction = {
+            let make_code_account_instruction = system_instruction::create_account_with_seed(&creator.pubkey(), &program_code, &creator.pubkey(), &program_seed, minimum_balance_code, program_code_len as u64, loader_id);
+            let make_code_account_message = Message::new(&[make_code_account_instruction], Some(&creator.pubkey()));
+            let mut program_code_transaction = Transaction::new_unsigned(make_code_account_message);
+            program_code_transaction.try_sign(&signers, blockhash)?;
+            program_code_transaction
+        };
         trace!("Creating or modifying program account");
-        let mut initial_transaction = Transaction::new_unsigned(initial_message);
-        initial_transaction.try_sign(&signers, blockhash)?;
-        let result = rpc_client.send_and_confirm_transaction_with_spinner_and_config(
-            &initial_transaction,
+        let initial_transaction = {
+            let mut initial_transaction = Transaction::new_unsigned(initial_message);
+            initial_transaction.try_sign(&signers, blockhash)?;
+            initial_transaction
+        };
+
+        initial_transactions.push(program_code_transaction);
+        initial_transactions.push(initial_transaction);
+    
+        trace!("Sending transactions");
+        send_and_confirm_transactions_with_spinner(
+            &rpc_client,
+            initial_transactions,
+            &signers,
             config.commitment,
-            config.send_transaction_config,
-        );
-        log_instruction_custom_error::<SystemError>(result, &config).map_err(|err| {
+            last_valid_slot,
+        )
+        .map_err(|err| {
             CliError::DynamicProgramError(format!("Program account allocation failed: {}", err))
         })?;
     }
