@@ -1521,6 +1521,7 @@ fn do_process_ether_deploy(
                 program_data_len as u64,
                 &loader_id,
             )],*/
+        instructions.push(system_instruction::create_account_with_seed(&creator.pubkey(), &program_code, &creator.pubkey(), &program_seed, minimum_balance_code, program_code_len as u64, loader_id));
         instructions.push(make_create_account_instruction(&program_id, &ether, nonce, minimum_balance_program));
         instructions
     };
@@ -1566,22 +1567,6 @@ fn do_process_ether_deploy(
         &messages,
         config.commitment,
     )?;
-
-    {  // Create code account
-        trace!("Create code account");
-        let make_code_account_instruction = system_instruction::create_account_with_seed(&creator.pubkey(), &program_code, &creator.pubkey(), &program_seed, minimum_balance_code, program_code_len as u64, loader_id);
-        let make_code_account_message = Message::new(&[make_code_account_instruction], Some(&creator.pubkey()));
-        let mut program_code_transaction = Transaction::new_unsigned(make_code_account_message);
-        program_code_transaction.try_sign(&signers, blockhash)?;
-        let result = rpc_client.send_and_confirm_transaction_with_spinner_and_config(
-            &program_code_transaction,
-            config.commitment,
-            config.send_transaction_config,
-        );
-        log_instruction_custom_error::<SystemError>(result, &config).map_err(|err| {
-            CliError::DynamicProgramError(format!("Program code account allocation failed: {}", err))
-        })?;
-    }
 
     {  // Send initialize message
         trace!("Creating or modifying program account");
