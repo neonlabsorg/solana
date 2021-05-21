@@ -257,7 +257,7 @@ fn build_bpf_package(config: &Config, target_directory: &Path, package: &cargo_m
     } else {
         "solana-bpf-tools-linux.tar.bz2"
     };
-    install_if_missing(
+/*    install_if_missing(
         &config,
         "bpf-tools",
         "v1.5",
@@ -265,7 +265,7 @@ fn build_bpf_package(config: &Config, target_directory: &Path, package: &cargo_m
         &PathBuf::from(bpf_tools_filename),
     )
     .expect("Failed to install bpf-tools");
-    link_bpf_toolchain(&config);
+    link_bpf_toolchain(&config);*/
 
     let llvm_bin = config
         .bpf_sdk
