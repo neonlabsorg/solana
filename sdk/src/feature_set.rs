@@ -142,6 +142,9 @@ pub mod ecrecover_syscall_enabled {
     solana_sdk::declare_id!("Cj9ydNGWLePKRztuE3m3zT1uvj2We517k55vq2e65jtP");
 }
 
+pub mod memory_ops_syscalls {
+    solana_sdk::declare_id!("ENQi37wsVhTvFz2gUiZAAbqFEWGN2jwFsqdEDTE8A4MU");
+}
 
 lazy_static! {
     /// Map of feature identifiers to user-visible description
@@ -179,6 +182,7 @@ lazy_static! {
         (set_upgrade_authority_via_cpi_enabled::id(), "set upgrade authority instruction via cpi calls for upgradable programs"),
         (keccak256_syscall_enabled::id(), "keccak256 syscall"),
         (ecrecover_syscall_enabled::id(), "ecrecover syscall"),
+        (memory_ops_syscalls::id(), "add syscalls for memory operations"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
