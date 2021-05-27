@@ -922,7 +922,7 @@ impl BpfTraceConfig {
 fn control_bpf_trace(program_id: &Pubkey, header: &str, trace: &str) {
     let trace_control = std::env::var("SOLANA_BPF_TRACE_CONTROL").unwrap_or_default();
     if trace_control.is_empty() {
-        trace!("{}\n{}", &header, &trace);
+        trace!("{}\n{}", header, trace);
         return;
     }
 
@@ -930,7 +930,7 @@ fn control_bpf_trace(program_id: &Pubkey, header: &str, trace: &str) {
         Ok(cfg) => cfg,
         Err(err) => {
             warn!("{}", err);
-            trace!("{}\n{}", &header, &trace);
+            trace!("{}\n{}", header, trace);
             return;
         }
     };
@@ -951,14 +951,14 @@ fn control_bpf_trace(program_id: &Pubkey, header: &str, trace: &str) {
     }
 
     if cfg.trace_file.is_empty() {
-        trace!("{}\n{}", &header, &trace);
+        trace!("{}\n{}", header, trace);
         return;
     }
 
     let filename = cfg.generate_filename();
     if let Err(err) = write_bpf_trace(&filename, &program_id, header, trace) {
         warn!("{}", err);
-        trace!("{}\n{}", &header, &trace);
+        trace!("{}\n{}", header, trace);
         return;
     }
     trace!("BPF Trace is written to file {}", &filename);
@@ -1027,8 +1027,17 @@ fn write_bpf_trace(
         .open(filename)
         .map_err(|e| Error::new(e.kind(), format!("{}: '{}'", e, filename)))?;
     let mut output = BufWriter::new(file);
-    writeln!(output, "BPF Program: {}", program_id)?;
-    writeln!(output, "{}\n{}", &header, &trace)?;
+    let timestamp = std::time::SystemTime::now();
+    write!(
+        output,
+        "[{:?} TRACE solana_bpf_loader_program] BPF Program: {}",
+        &timestamp, program_id
+    )?;
+    write!(
+        output,
+        "[{:?} TRACE solana_bpf_loader_program] {}\n{}",
+        &timestamp, header, trace
+    )?;
     output.flush()
 }
 
