@@ -9,6 +9,7 @@ pub mod upgradeable;
 pub mod upgradeable_with_jit;
 pub mod with_jit;
 
+#[cfg(feature = "with-bpf-trace-control")]
 mod bpf_trace;
 
 use crate::{
@@ -830,7 +831,10 @@ impl Executor for BpfExecutor {
                 vm.get_tracer()
                     .write(&mut trace_buffer, vm.get_program())
                     .unwrap();
-                bpf_trace::control(program_id, "BPF Program Instruction Trace:", &trace_buffer);
+                #[cfg(feature = "with-bpf-trace-control")]
+                bpf_trace::control("BPF Program Instruction Trace:", &trace_buffer, program_id);
+                #[cfg(not(feature = "with-bpf-trace-control"))]
+                log::trace!("BPF Program Instruction Trace:\n{}", trace_buffer);
             }
             match result {
                 Ok(status) => {

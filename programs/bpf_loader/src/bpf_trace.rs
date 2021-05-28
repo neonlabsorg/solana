@@ -2,7 +2,7 @@ use log::{trace, warn};
 use solana_sdk::pubkey::Pubkey;
 
 /// Controls the trace if the environment variable exists.
-pub fn control(program_id: &Pubkey, header: &str, trace: &str) {
+pub fn control(header: &str, trace: &str, program_id: &Pubkey) {
     trace!("BPF Program: {}", &program_id);
 
     let trace_control = std::env::var("SOLANA_BPF_TRACE_CONTROL").unwrap_or_default();
