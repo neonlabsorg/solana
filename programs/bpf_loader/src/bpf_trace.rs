@@ -6,18 +6,21 @@ use solana_sdk::pubkey::Pubkey;
 use std::io::{Error, Result, Write};
 use std::sync::Mutex;
 
+const ENV: &str = "SOLANA_BPF_TRACE_CONTROL";
+const SERVICE: &str = "BPF Trace Control Service";
+
 /// Controls the trace if the environment variable exists.
 pub fn control(header: &str, trace: &str, program_id: &Pubkey) {
     trace!("BPF Program: {}", &program_id);
 
-    let port = std::env::var("SOLANA_BPF_TRACE_CONTROL").unwrap_or_default();
+    let port = std::env::var(ENV).unwrap_or_default();
     if port.is_empty() {
         trace!("{}\n{}", header, trace);
         return;
     }
 
-    if let Err(err) = ensure_start_tcp_server(&port) {
-        warn!("{}", err);
+    if !service_started() {
+        warn!("{} did not started", SERVICE);
         trace!("{}\n{}", header, trace);
         return;
     }
@@ -56,9 +59,21 @@ fn config() -> BpfTraceConfig {
     CONFIG.lock().unwrap().clone()
 }
 
-fn set_enable(enable: bool) {
-    CONFIG.lock().unwrap().enable = enable;
+fn config_to_string() -> String {
+    let cfg = CONFIG.lock().unwrap();
+    format!(
+        "enable={}\nfilter={}\noutput={}\nmultiple={}",
+        cfg.enable, cfg.filter, cfg.output, cfg.multiple
+    )
 }
+
+fn get_enable() -> String {
+    CONFIG.lock().unwrap().enable.to_string()
+}
+
+//fn set_enable(enable: bool) {
+//    CONFIG.lock().unwrap().enable = enable;
+//}
 
 /// Represents parameters to control BPF tracing.
 #[derive(Default, Clone)]
@@ -66,7 +81,7 @@ struct BpfTraceConfig {
     enable: bool,
     filter: String,
     output: String,
-    multiple_output: bool,
+    multiple: bool,
 }
 
 impl BpfTraceConfig {
@@ -92,7 +107,7 @@ impl BpfTraceConfig {
                 result += pro[0];
             }
         }
-        if self.multiple_output {
+        if self.multiple {
             let now = std::time::SystemTime::now();
             let epoch = now.duration_since(std::time::SystemTime::UNIX_EPOCH);
             if let Ok(epoch) = epoch {
@@ -102,6 +117,100 @@ impl BpfTraceConfig {
         }
         result
     }
+}
+
+lazy_static! {
+    static ref SERVER: Mutex<TcpServer> = Mutex::new(TcpServer::start());
+}
+
+fn service_started() -> bool {
+    SERVER.lock().unwrap().is_running
+}
+
+/// Represents simple single-threaded TCP server to accept control commands.
+#[derive(Default)]
+struct TcpServer {
+    is_running: bool,
+}
+
+use std::net::{TcpListener, TcpStream};
+
+impl TcpServer {
+    fn start() -> Self {
+        let port = std::env::var(ENV).unwrap_or_default();
+        if port.is_empty() {
+            return TcpServer::default();
+        }
+
+        let addr = format!("127.0.0.1:{}", &port);
+        let listener = TcpListener::bind(&addr);
+        if let Err(err) = listener {
+            warn!("{} {}: '{}'", SERVICE, err, port);
+            return TcpServer::default();
+        }
+
+        let _ = std::thread::spawn(move || listen(listener.unwrap()));
+        TcpServer { is_running: true }
+    }
+}
+
+/// Starts listening incoming connections.
+fn listen(listener: TcpListener) -> Result<()> {
+    for stream in listener.incoming() {
+        handle_connection(stream?);
+    }
+    Ok(())
+}
+
+/// Accepts a control input and handles it.
+fn handle_connection(mut stream: TcpStream) {
+    use std::io::Read;
+
+    let mut buf = [0; 256];
+    let bytes_read = match stream.read(&mut buf) {
+        Err(err) => {
+            warn!("{}", err);
+            return;
+        }
+        Ok(bytes_read) => bytes_read,
+    };
+
+    dispatch_command(String::from_utf8_lossy(&buf[0..bytes_read]));
+}
+
+/// Executes a command.
+fn dispatch_command(command: String) {
+    if command == "show" {
+        stream.write_all(config_to_string().as_bytes()).ok();
+        return;
+    }
+
+    let sep = match command.find("=") {
+        None => {
+            let msg = format!(
+                "Invalid format of BPF trace control parameter '{}'",
+                &command
+            );
+            warn!("{}", &msg);
+            stream.write_all(msg.as_bytes()).ok();
+            return;
+        }
+        Some(sep) => sep,
+    };
+
+    let key = &command[0..sep];
+    //let value = &command[sep..];
+
+    let resp = match key {
+        "enable" => get_enable(),
+        _ => {
+            let msg = format!("Unsupported BPF trace control parameter '{}'", &command);
+            warn!("{}", &msg);
+            msg
+        }
+    };
+
+    stream.write_all(resp.as_bytes()).ok();
 }
 
 /// Writes a BPF trace into file.
@@ -125,65 +234,4 @@ fn write_bpf_trace(filename: &str, program_id: &str, header: &str, trace: &str) 
         &timestamp, header, trace
     )?;
     output.flush()
-}
-
-lazy_static! {
-    static ref SERVER: Mutex<TcpServer> = Mutex::new(TcpServer::default());
-}
-
-/// Starts the TCP server if not yet running.
-fn ensure_start_tcp_server(port: &str) -> Result<()> {
-    if !SERVER.lock().unwrap().is_started() {
-        SERVER.lock().unwrap().start(port)?;
-    }
-    Ok(())
-}
-
-/// Represents simple single-threaded TCP server to accept control commands.
-#[derive(Default)]
-struct TcpServer {
-    port: String,
-}
-
-use std::net::{TcpListener, TcpStream};
-
-impl TcpServer {
-    fn is_started(&self) -> bool {
-        !self.port.is_empty()
-    }
-
-    fn start(&mut self, port: &str) -> Result<()> {
-        assert!(self.port.is_empty());
-        self.port = port.into();
-        let addr = format!("127.0.0.1:{}", port);
-        let listener = TcpListener::bind(&addr)
-            .map_err(|e| Error::new(e.kind(), format!("TcpServer {}: '{}'", e, port)))?;
-        let _ = std::thread::spawn(move || listen(listener));
-        Ok(())
-    }
-}
-
-/// Starts listening incoming connections.
-fn listen(listener: TcpListener) -> Result<()> {
-    for stream in listener.incoming() {
-        handle_connection(stream?);
-    }
-    Ok(())
-}
-
-/// Accepts a control command and handles it.
-fn handle_connection(mut stream: TcpStream) {
-    use std::io::Read;
-    let mut buf = [0; 512];
-
-    if let Err(err) = stream.read(&mut buf) {
-        warn!("{}", err);
-        return;
-    }
-
-    let input = String::from_utf8_lossy(&buf);
-    dbg!(&input);
-    stream.write_all(input.as_bytes()).ok();
-
-    set_enable(false);
 }
