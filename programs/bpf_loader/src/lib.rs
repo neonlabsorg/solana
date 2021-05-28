@@ -9,12 +9,14 @@ pub mod upgradeable;
 pub mod upgradeable_with_jit;
 pub mod with_jit;
 
+mod bpf_trace;
+
 use crate::{
     bpf_verifier::VerifierError,
     serialization::{deserialize_parameters, serialize_parameters},
     syscalls::SyscallError,
 };
-use log::{log_enabled, trace, Level::Trace};
+use log::{log_enabled, Level::Trace};
 use solana_measure::measure::Measure;
 use solana_rbpf::{
     aligned_memory::AlignedMemory,
@@ -828,7 +830,7 @@ impl Executor for BpfExecutor {
                 vm.get_tracer()
                     .write(&mut trace_buffer, vm.get_program())
                     .unwrap();
-                trace!("BPF Program Instruction Trace:\n{}", trace_buffer);
+                bpf_trace::control(program_id, "BPF Program Instruction Trace:", &trace_buffer);
             }
             match result {
                 Ok(status) => {
