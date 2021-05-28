@@ -1,47 +1,46 @@
+//! mod bpf_trace.
+
+use lazy_static::lazy_static;
 use log::{trace, warn};
 use solana_sdk::pubkey::Pubkey;
+use std::io::{Error, Result, Write};
+use std::sync::Mutex;
 
 /// Controls the trace if the environment variable exists.
 pub fn control(header: &str, trace: &str, program_id: &Pubkey) {
     trace!("BPF Program: {}", &program_id);
 
-    let trace_control = std::env::var("SOLANA_BPF_TRACE_CONTROL").unwrap_or_default();
-    if trace_control.is_empty() {
+    let port = std::env::var("SOLANA_BPF_TRACE_CONTROL").unwrap_or_default();
+    if port.is_empty() {
         trace!("{}\n{}", header, trace);
         return;
     }
 
-    let cfg = match parse_bpf_trace_control_file(&trace_control) {
-        Ok(cfg) => cfg,
-        Err(err) => {
-            warn!("{}", err);
-            trace!("{}\n{}", header, trace);
-            return;
-        }
-    };
+    if let Err(err) = ensure_start_tcp_server(&port) {
+        warn!("{}", err);
+        trace!("{}\n{}", header, trace);
+        return;
+    }
+
+    let cfg = config();
 
     if !cfg.enable {
-        trace!("BPF Trace is disabled (see {})", &trace_control);
+        trace!("BPF Trace is disabled");
         return;
     }
 
-    let program_id = program_id.to_string();
     if !cfg.passes_program(&program_id) {
-        trace!(
-            "BPF Trace is disabled for program {} (see {})",
-            &program_id,
-            &trace_control
-        );
+        trace!("BPF Trace is disabled for program {})", &program_id);
         return;
     }
 
-    if cfg.trace_file.is_empty() {
+    if cfg.output.is_empty() {
         trace!("{}\n{}", header, trace);
         return;
     }
 
     let filename = cfg.generate_filename();
-    if let Err(err) = write_bpf_trace(&filename, &program_id, header, trace) {
+    if let Err(err) = write_bpf_trace(&filename, &program_id.to_string(), header, trace) {
         warn!("{}", err);
         trace!("{}\n{}", header, trace);
         return;
@@ -49,31 +48,43 @@ pub fn control(header: &str, trace: &str, program_id: &Pubkey) {
     trace!("BPF Trace is written to file {}", &filename);
 }
 
+lazy_static! {
+    static ref CONFIG: Mutex<BpfTraceConfig> = Mutex::new(BpfTraceConfig::default());
+}
+
+fn config() -> BpfTraceConfig {
+    CONFIG.lock().unwrap().clone()
+}
+
+fn set_enable(enable: bool) {
+    CONFIG.lock().unwrap().enable = enable;
+}
+
 /// Represents parameters to control BPF tracing.
-#[derive(Default, Debug)]
+#[derive(Default, Clone)]
 struct BpfTraceConfig {
     enable: bool,
     filter: String,
-    trace_file: String,
-    new_trace_file_each_execution: bool,
+    output: String,
+    multiple_output: bool,
 }
 
 impl BpfTraceConfig {
     /// Checks if the program id is in the filter. Example:
     /// evm_loader:3CMCRJieHS3sWWeovyFyH4iRyX4rHf3u2zbC5RCFrRex
     /// Empty filter passes everything.
-    fn passes_program(&self, id: &str) -> bool {
+    fn passes_program(&self, id: &Pubkey) -> bool {
         if self.filter.is_empty() {
             return true;
         }
         let pro: Vec<&str> = self.filter.split(":").collect();
-        pro.len() == 2 && pro[1] == id
+        pro.len() == 2 && pro[1] == id.to_string()
     }
 
     /// Creates new output filename.
     fn generate_filename(&self) -> String {
-        assert!(!self.trace_file.is_empty());
-        let mut result = self.trace_file.clone();
+        assert!(!self.output.is_empty());
+        let mut result = self.output.clone();
         if !self.filter.is_empty() {
             let pro: Vec<&str> = self.filter.split(":").collect();
             if pro.len() == 2 {
@@ -81,7 +92,7 @@ impl BpfTraceConfig {
                 result += pro[0];
             }
         }
-        if self.new_trace_file_each_execution {
+        if self.multiple_output {
             let now = std::time::SystemTime::now();
             let epoch = now.duration_since(std::time::SystemTime::UNIX_EPOCH);
             if let Ok(epoch) = epoch {
@@ -93,63 +104,9 @@ impl BpfTraceConfig {
     }
 }
 
-/// Parses a BPF tracing control file. For example:
-/// ```conf
-/// enable=true
-/// filter=evm_loader:3CMCRJieHS3sWWeovyFyH4iRyX4rHf3u2zbC5RCFrRex
-/// trace-file=/tmp/trace
-/// new-trace-file-each-execution=true
-/// ```
-fn parse_bpf_trace_control_file(filename: &str) -> std::io::Result<BpfTraceConfig> {
-    use std::io::BufRead;
-    use std::io::{Error, ErrorKind};
-
-    let mut cfg = BpfTraceConfig::default();
-    let file = std::fs::File::open(filename)
-        .map_err(|e| Error::new(e.kind(), format!("{}: '{}'", e, filename)))?;
-    let reader = std::io::BufReader::new(file);
-
-    const COMMENT: &str = "#";
-    for line in reader.lines() {
-        let mut line = line?;
-        line.retain(|c| !c.is_whitespace());
-        if line.starts_with(COMMENT) {
-            continue;
-        }
-        let kv: Vec<&str> = line.split("=").collect();
-        if kv.len() != 2 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("Invalid format of BPF trace control parameter '{}'", &line),
-            ));
-        }
-        match kv[0] {
-            "enable" => cfg.enable = !(kv[1] == "0" || kv[1] == "false"),
-            "filter" => cfg.filter = kv[1].into(),
-            "trace-file" => cfg.trace_file = kv[1].into(),
-            "new-trace-file-each-execution" => {
-                cfg.new_trace_file_each_execution = !(kv[1] == "0" || kv[1] == "false")
-            }
-            _ => {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Unsupported BPF trace control parameter '{}'", &line),
-                ));
-            }
-        }
-    }
-
-    Ok(cfg)
-}
-
 /// Writes a BPF trace into file.
-fn write_bpf_trace(
-    filename: &str,
-    program_id: &str,
-    header: &str,
-    trace: &str,
-) -> std::io::Result<()> {
-    use std::io::{BufWriter, Error, Write};
+fn write_bpf_trace(filename: &str, program_id: &str, header: &str, trace: &str) -> Result<()> {
+    use std::io::BufWriter;
     let file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -168,4 +125,65 @@ fn write_bpf_trace(
         &timestamp, header, trace
     )?;
     output.flush()
+}
+
+lazy_static! {
+    static ref SERVER: Mutex<TcpServer> = Mutex::new(TcpServer::default());
+}
+
+/// Starts the TCP server if not yet running.
+fn ensure_start_tcp_server(port: &str) -> Result<()> {
+    if !SERVER.lock().unwrap().is_started() {
+        SERVER.lock().unwrap().start(port)?;
+    }
+    Ok(())
+}
+
+/// Represents simple single-threaded TCP server to accept control commands.
+#[derive(Default)]
+struct TcpServer {
+    port: String,
+}
+
+use std::net::{TcpListener, TcpStream};
+
+impl TcpServer {
+    fn is_started(&self) -> bool {
+        !self.port.is_empty()
+    }
+
+    fn start(&mut self, port: &str) -> Result<()> {
+        assert!(self.port.is_empty());
+        self.port = port.into();
+        let addr = format!("127.0.0.1:{}", port);
+        let listener = TcpListener::bind(&addr)
+            .map_err(|e| Error::new(e.kind(), format!("TcpServer {}: '{}'", e, port)))?;
+        let _ = std::thread::spawn(move || listen(listener));
+        Ok(())
+    }
+}
+
+/// Starts listening incoming connections.
+fn listen(listener: TcpListener) -> Result<()> {
+    for stream in listener.incoming() {
+        handle_connection(stream?);
+    }
+    Ok(())
+}
+
+/// Accepts a control command and handles it.
+fn handle_connection(mut stream: TcpStream) {
+    use std::io::Read;
+    let mut buf = [0; 512];
+
+    if let Err(err) = stream.read(&mut buf) {
+        warn!("{}", err);
+        return;
+    }
+
+    let input = String::from_utf8_lossy(&buf);
+    dbg!(&input);
+    stream.write_all(input.as_bytes()).ok();
+
+    set_enable(false);
 }
