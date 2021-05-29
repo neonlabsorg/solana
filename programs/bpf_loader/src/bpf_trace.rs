@@ -6,14 +6,14 @@ use solana_sdk::pubkey::Pubkey;
 use std::io::{Error, Result, Write};
 use std::sync::Mutex;
 
-const ENV: &str = "SOLANA_BPF_TRACE_CONTROL";
+const PORT: &str = "SOLANA_BPF_TRACE_CONTROL";
 const SERVICE: &str = "BPF Trace Control Service";
 
 /// Controls the trace if the environment variable exists.
 pub fn control(header: &str, trace: &str, program_id: &Pubkey) {
-    trace!("BPF Program: {}", &program_id);
+    trace!("BPF Program: {}\n", &program_id);
 
-    let port = std::env::var(ENV).unwrap_or_default();
+    let port = std::env::var(PORT).unwrap_or_default();
     if port.is_empty() {
         trace!("{}\n{}", header, trace);
         return;
@@ -43,6 +43,11 @@ pub fn control(header: &str, trace: &str, program_id: &Pubkey) {
     }
 
     let filename = cfg.generate_filename();
+    if filename.is_empty() {
+        trace!("{}\n{}", header, trace);
+        return;
+    }
+
     if let Err(err) = write_bpf_trace(&filename, &program_id.to_string(), header, trace) {
         warn!("{}", err);
         trace!("{}\n{}", header, trace);
@@ -51,8 +56,17 @@ pub fn control(header: &str, trace: &str, program_id: &Pubkey) {
     trace!("BPF Trace is written to file {}", &filename);
 }
 
+/// Represents parameters to control BPF tracing.
+#[derive(Clone)]
+struct BpfTraceConfig {
+    enable: bool,
+    filter: String,
+    output: String,
+    multiple: bool,
+}
+
 lazy_static! {
-    static ref CONFIG: Mutex<BpfTraceConfig> = Mutex::new(BpfTraceConfig::default());
+    static ref CONFIG: Mutex<BpfTraceConfig> = Mutex::new(BpfTraceConfig::new());
 }
 
 fn config() -> BpfTraceConfig {
@@ -62,49 +76,79 @@ fn config() -> BpfTraceConfig {
 fn config_to_string() -> String {
     let cfg = CONFIG.lock().unwrap();
     format!(
-        "enable={}\nfilter={}\noutput={}\nmultiple={}",
+        "enable = {}\nfilter = {}\noutput = {}\nmultiple = {}",
         cfg.enable, cfg.filter, cfg.output, cfg.multiple
     )
 }
 
 fn get_enable() -> String {
-    CONFIG.lock().unwrap().enable.to_string()
+    format!("enable = {}", CONFIG.lock().unwrap().enable)
 }
 
-//fn set_enable(enable: bool) {
-//    CONFIG.lock().unwrap().enable = enable;
-//}
+fn get_filter() -> String {
+    format!("filter = {}", CONFIG.lock().unwrap().filter)
+}
 
-/// Represents parameters to control BPF tracing.
-#[derive(Default, Clone)]
-struct BpfTraceConfig {
-    enable: bool,
-    filter: String,
-    output: String,
-    multiple: bool,
+fn get_output() -> String {
+    format!("output = {}", CONFIG.lock().unwrap().output)
+}
+
+fn get_multiple() -> String {
+    format!("multiple = {}", CONFIG.lock().unwrap().multiple)
+}
+
+fn set_enable(value: bool) -> String {
+    CONFIG.lock().unwrap().enable = value;
+    format!("enable = {}", value)
+}
+
+fn set_filter(value: &str) -> String {
+    CONFIG.lock().unwrap().filter = value.into();
+    format!("filter = {}", value)
+}
+
+fn set_output(value: &str) -> String {
+    CONFIG.lock().unwrap().output = value.into();
+    format!("output = {}", value)
+}
+
+fn set_multiple(value: bool) -> String {
+    CONFIG.lock().unwrap().multiple = value;
+    format!("multiple = {}", value)
 }
 
 impl BpfTraceConfig {
+    /// Creates config with reasonable initial state.
+    fn new() -> Self {
+        BpfTraceConfig {
+            enable: true,
+            filter: String::default(),
+            output: "/tmp/trace".into(),
+            multiple: true,
+        }
+    }
+
     /// Checks if the program id is in the filter. Example:
     /// evm_loader:3CMCRJieHS3sWWeovyFyH4iRyX4rHf3u2zbC5RCFrRex
     /// Empty filter passes everything.
     fn passes_program(&self, id: &Pubkey) -> bool {
-        if self.filter.is_empty() {
-            return true;
+        self.filter.is_empty() || {
+            let sep = self.filter.find(":").unwrap_or_default();
+            sep != usize::default() && id.to_string() == &self.filter[sep + 1..]
         }
-        let pro: Vec<&str> = self.filter.split(":").collect();
-        pro.len() == 2 && pro[1] == id.to_string()
     }
 
     /// Creates new output filename.
     fn generate_filename(&self) -> String {
-        assert!(!self.output.is_empty());
         let mut result = self.output.clone();
+        if result.is_empty() {
+            return result;
+        }
         if !self.filter.is_empty() {
-            let pro: Vec<&str> = self.filter.split(":").collect();
-            if pro.len() == 2 {
+            let sep = self.filter.find(":").unwrap_or_default();
+            if sep != usize::default() {
                 result += "_";
-                result += pro[0];
+                result += &self.filter[0..sep];
             }
         }
         if self.multiple {
@@ -119,6 +163,12 @@ impl BpfTraceConfig {
     }
 }
 
+/// Represents simple single-threaded TCP server to accept control commands.
+#[derive(Default)]
+struct TcpServer {
+    is_running: bool,
+}
+
 lazy_static! {
     static ref SERVER: Mutex<TcpServer> = Mutex::new(TcpServer::start());
 }
@@ -127,37 +177,35 @@ fn service_started() -> bool {
     SERVER.lock().unwrap().is_running
 }
 
-/// Represents simple single-threaded TCP server to accept control commands.
-#[derive(Default)]
-struct TcpServer {
-    is_running: bool,
-}
-
 use std::net::{TcpListener, TcpStream};
 
 impl TcpServer {
     fn start() -> Self {
-        let port = std::env::var(ENV).unwrap_or_default();
+        let port = std::env::var(PORT).unwrap_or_default();
         if port.is_empty() {
             return TcpServer::default();
         }
 
         let addr = format!("127.0.0.1:{}", &port);
-        let listener = TcpListener::bind(&addr);
-        if let Err(err) = listener {
-            warn!("{} {}: '{}'", SERVICE, err, port);
-            return TcpServer::default();
+        let listener = TcpListener::bind(&addr).map_err(|e| warn!("{} {}: '{}'", SERVICE, e, port));
+        if listener.is_err() {
+            TcpServer::default()
+        } else {
+            let _ = std::thread::spawn(move || listen(listener.unwrap()));
+            TcpServer { is_running: true }
         }
-
-        let _ = std::thread::spawn(move || listen(listener.unwrap()));
-        TcpServer { is_running: true }
     }
 }
 
 /// Starts listening incoming connections.
 fn listen(listener: TcpListener) -> Result<()> {
     for stream in listener.incoming() {
-        handle_connection(stream?);
+        match stream {
+            Ok(stream) => handle_connection(stream),
+            Err(err) => {
+                warn!("{}: incoming connection: {}", SERVICE, err);
+            }
+        }
     }
     Ok(())
 }
@@ -165,44 +213,53 @@ fn listen(listener: TcpListener) -> Result<()> {
 /// Accepts a control input and handles it.
 fn handle_connection(mut stream: TcpStream) {
     use std::io::Read;
-
     let mut buf = [0; 256];
-    let bytes_read = match stream.read(&mut buf) {
-        Err(err) => {
-            warn!("{}", err);
-            return;
-        }
-        Ok(bytes_read) => bytes_read,
-    };
-
-    dispatch_command(String::from_utf8_lossy(&buf[0..bytes_read]));
+    let bytes_read = stream.read(&mut buf).map_err(|e| warn!("{}", e));
+    if bytes_read.is_ok() {
+        let mut command = String::from_utf8_lossy(&buf[0..bytes_read.unwrap()]).to_string();
+        command.retain(|c| !c.is_whitespace());
+        dispatch_command(&command, stream);
+    }
 }
 
 /// Executes a command.
-fn dispatch_command(command: String) {
+fn dispatch_command(command: &str, mut stream: TcpStream) {
     if command == "show" {
         stream.write_all(config_to_string().as_bytes()).ok();
         return;
+    } else if command == "enable" {
+        stream.write_all(get_enable().as_bytes()).ok();
+        return;
+    } else if command == "filter" {
+        stream.write_all(get_filter().as_bytes()).ok();
+        return;
+    } else if command == "output" {
+        stream.write_all(get_output().as_bytes()).ok();
+        return;
+    } else if command == "multiple" {
+        stream.write_all(get_multiple().as_bytes()).ok();
+        return;
     }
 
-    let sep = match command.find("=") {
-        None => {
-            let msg = format!(
-                "Invalid format of BPF trace control parameter '{}'",
-                &command
-            );
-            warn!("{}", &msg);
-            stream.write_all(msg.as_bytes()).ok();
-            return;
-        }
-        Some(sep) => sep,
-    };
+    let sep = command.find("=").unwrap_or_default();
+    if sep == usize::default() {
+        let msg = format!(
+            "Invalid format of BPF trace control parameter '{}'",
+            &command
+        );
+        warn!("{}", &msg);
+        stream.write_all(msg.as_bytes()).ok();
+        return;
+    }
 
     let key = &command[0..sep];
-    //let value = &command[sep..];
+    let value = &command[sep + 1..];
 
     let resp = match key {
-        "enable" => get_enable(),
+        "enable" => set_enable(value != "false" && value != "0"),
+        "filter" => set_filter(value),
+        "output" => set_output(value),
+        "multiple" => set_multiple(value != "false" && value != "0"),
         _ => {
             let msg = format!("Unsupported BPF trace control parameter '{}'", &command);
             warn!("{}", &msg);
@@ -215,23 +272,20 @@ fn dispatch_command(command: String) {
 
 /// Writes a BPF trace into file.
 fn write_bpf_trace(filename: &str, program_id: &str, header: &str, trace: &str) -> Result<()> {
-    use std::io::BufWriter;
-    let file = std::fs::OpenOptions::new()
+    let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(filename)
         .map_err(|e| Error::new(e.kind(), format!("{}: '{}'", e, filename)))?;
-    let mut output = BufWriter::new(file);
     let timestamp = std::time::SystemTime::now();
     write!(
-        output,
+        file,
         "[{:?} TRACE solana_bpf_loader_program] BPF Program: {}",
         &timestamp, program_id
     )?;
     write!(
-        output,
+        file,
         "[{:?} TRACE solana_bpf_loader_program] {}\n{}",
         &timestamp, header, trace
-    )?;
-    output.flush()
+    )
 }
