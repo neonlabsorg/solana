@@ -1,27 +1,36 @@
 //! mod bpf_trace.
 
-use lazy_static::lazy_static;
+use super::{BpfError, ThisInstructionMeter};
 use log::{trace, warn};
+use solana_rbpf::vm::EbpfVm;
 use solana_sdk::pubkey::Pubkey;
-use std::io::{Error, Result, Write};
-use std::sync::Mutex;
 
 const PORT: &str = "SOLANA_BPF_TRACE_CONTROL";
 const SERVICE: &str = "BPF Trace Control Service";
 
 /// Controls the trace if the environment variable exists.
-pub fn control(header: &str, trace: &str, program_id: &Pubkey) {
-    trace!("BPF Program: {}\n", &program_id);
+pub fn control<'a>(
+    header: &str,
+    vm: &EbpfVm<'a, BpfError, ThisInstructionMeter>,
+    program_id: &Pubkey,
+) {
+    trace!("BPF Program: {}", program_id);
+
+    let mut trace_buffer = String::new();
+    vm.get_tracer()
+        .write(&mut trace_buffer, vm.get_program())
+        .unwrap();
 
     let port = std::env::var(PORT).unwrap_or_default();
     if port.is_empty() {
-        trace!("{}\n{}", header, trace);
+        warn!("Variable '{}' does not exist", PORT);
+        trace!("{}\n{}", header, &trace_buffer);
         return;
     }
 
     if !service_started() {
         warn!("{} did not started", SERVICE);
-        trace!("{}\n{}", header, trace);
+        trace!("{}\n{}", header, &trace_buffer);
         return;
     }
 
@@ -32,29 +41,54 @@ pub fn control(header: &str, trace: &str, program_id: &Pubkey) {
         return;
     }
 
-    if !cfg.passes_program(&program_id) {
-        trace!("BPF Trace is disabled for program {})", &program_id);
+    if !cfg.passes_program(program_id) {
+        trace!("BPF Trace is disabled for program {})", program_id);
         return;
     }
 
     if cfg.output.is_empty() {
-        trace!("{}\n{}", header, trace);
+        trace!("{}\n{}", header, &trace_buffer);
         return;
     }
 
     let filename = cfg.generate_filename();
     if filename.is_empty() {
-        trace!("{}\n{}", header, trace);
+        trace!("{}\n{}", header, &trace_buffer);
         return;
     }
 
-    if let Err(err) = write_bpf_trace(&filename, &program_id.to_string(), header, trace) {
+    if let Err(err) = write_bpf_trace(&filename, &program_id.to_string(), header, &trace_buffer) {
         warn!("{}", err);
-        trace!("{}\n{}", header, trace);
+        trace!("{}\n{}", header, &trace_buffer);
         return;
     }
     trace!("BPF Trace is written to file {}", &filename);
 }
+
+use std::io::{Error, Result, Write};
+
+/// Writes a BPF trace into file.
+fn write_bpf_trace(filename: &str, program_id: &str, header: &str, trace: &str) -> Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(filename)
+        .map_err(|e| Error::new(e.kind(), format!("{}: '{}'", e, filename)))?;
+    let timestamp = std::time::SystemTime::now();
+    write!(
+        file,
+        "[{:?} TRACE solana_bpf_loader_program] BPF Program: {}",
+        &timestamp, program_id
+    )?;
+    write!(
+        file,
+        "[{:?} TRACE solana_bpf_loader_program] {}\n{}",
+        &timestamp, header, trace
+    )
+}
+
+use lazy_static::lazy_static;
+use std::sync::Mutex;
 
 /// Represents parameters to control BPF tracing.
 #[derive(Clone)]
@@ -140,26 +174,26 @@ impl BpfTraceConfig {
 
     /// Creates new output filename.
     fn generate_filename(&self) -> String {
-        let mut result = self.output.clone();
-        if result.is_empty() {
-            return result;
+        let mut name = self.output.clone();
+        if name.is_empty() {
+            return name;
         }
         if !self.filter.is_empty() {
             let sep = self.filter.find(":").unwrap_or_default();
             if sep != usize::default() {
-                result += "_";
-                result += &self.filter[0..sep];
+                name += "_";
+                name += &self.filter[0..sep];
             }
         }
         if self.multiple {
             let now = std::time::SystemTime::now();
             let epoch = now.duration_since(std::time::SystemTime::UNIX_EPOCH);
             if let Ok(epoch) = epoch {
-                result += "_";
-                result += &epoch.as_nanos().to_string();
+                name += "_";
+                name += &epoch.as_nanos().to_string();
             }
         }
-        result
+        name
     }
 }
 
@@ -197,8 +231,8 @@ impl TcpServer {
     }
 }
 
-/// Starts listening incoming connections.
-fn listen(listener: TcpListener) -> Result<()> {
+/// Starts listening incoming connections in a separate thread.
+fn listen(listener: TcpListener) {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => handle_connection(stream),
@@ -207,7 +241,6 @@ fn listen(listener: TcpListener) -> Result<()> {
             }
         }
     }
-    Ok(())
 }
 
 /// Accepts a control input and handles it.
@@ -268,24 +301,4 @@ fn dispatch_command(command: &str, mut stream: TcpStream) {
     };
 
     stream.write_all(resp.as_bytes()).ok();
-}
-
-/// Writes a BPF trace into file.
-fn write_bpf_trace(filename: &str, program_id: &str, header: &str, trace: &str) -> Result<()> {
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(filename)
-        .map_err(|e| Error::new(e.kind(), format!("{}: '{}'", e, filename)))?;
-    let timestamp = std::time::SystemTime::now();
-    write!(
-        file,
-        "[{:?} TRACE solana_bpf_loader_program] BPF Program: {}",
-        &timestamp, program_id
-    )?;
-    write!(
-        file,
-        "[{:?} TRACE solana_bpf_loader_program] {}\n{}",
-        &timestamp, header, trace
-    )
 }

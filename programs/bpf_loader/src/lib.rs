@@ -827,14 +827,11 @@ impl Executor for BpfExecutor {
                 before
             );
             if log_enabled!(Trace) {
-                let mut trace_buffer = String::new();
-                vm.get_tracer()
-                    .write(&mut trace_buffer, vm.get_program())
-                    .unwrap();
+                const HEADER: &str = "BPF Program Instruction Trace:";
                 #[cfg(feature = "with-bpf-trace-control")]
-                bpf_trace::control("BPF Program Instruction Trace:", &trace_buffer, program_id);
+                bpf_trace::control(HEADER, &vm, program_id);
                 #[cfg(not(feature = "with-bpf-trace-control"))]
-                log::trace!("BPF Program Instruction Trace:\n{}", trace_buffer);
+                simple_trace(HEADER, &vm, program_id);
             }
             match result {
                 Ok(status) => {
@@ -877,6 +874,21 @@ impl Executor for BpfExecutor {
         stable_log::program_success(&logger, program_id);
         Ok(())
     }
+}
+
+/// Just dumps the trace into the standard output.
+#[cfg(not(feature = "with-bpf-trace-control"))]
+fn simple_trace<'a>(
+    header: &str,
+    vm: &EbpfVm<'a, BpfError, ThisInstructionMeter>,
+    program_id: &Pubkey,
+) {
+    log::trace!("BPF Program: {}", program_id);
+    let mut trace_buffer = String::new();
+    vm.get_tracer()
+        .write(&mut trace_buffer, vm.get_program())
+        .unwrap();
+    log::trace!("{}\n{}", header, trace_buffer);
 }
 
 #[cfg(test)]
