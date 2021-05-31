@@ -143,7 +143,7 @@ impl Default for BpfComputeBudget {
 impl BpfComputeBudget {
     pub fn new() -> Self {
         BpfComputeBudget {
-            max_units: 200_000_000,
+            max_units: 400_000,
             log_units: 100,
             log_64_units: 100,
             create_program_address_units: 1500,
@@ -152,7 +152,7 @@ impl BpfComputeBudget {
             sha256_base_cost: 85,
             sha256_byte_cost: 1,
             max_call_depth: 64,
-            stack_frame_size: 4_096*1024,
+            stack_frame_size: 4_096,
             log_pubkey_units: 100,
             max_cpi_instruction_size: 1280, // IPv6 Min MTU size
             cpi_bytes_per_unit: 250,        // ~50MB at 200,000 units

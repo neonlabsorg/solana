@@ -137,7 +137,7 @@ fn check_loader_id(id: &Pubkey) -> bool {
 
 /// Default program heap size, allocators
 /// are expected to enforce this
-const DEFAULT_HEAP_SIZE: usize = 32 * 1024 * 1024;
+const DEFAULT_HEAP_SIZE: usize = 256 * 1024;
 
 /// Create the BPF virtual machine
 pub fn create_vm<'a>(
