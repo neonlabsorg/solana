@@ -57,18 +57,55 @@ pub fn control<'a>(
         return;
     }
 
-    if let Err(err) = write_bpf_trace(&filename, &program_id.to_string(), header, &trace_buffer) {
-        warn!("{}", err);
-        trace!("{}\n{}", header, &trace_buffer);
-        return;
-    }
-    trace!("BPF Trace is written to file {}", &filename);
+    // Move writing a trace file into a detached thread (shoot-and-forget)
+    let program_id = program_id.to_string();
+    let header = header.to_string();
+    let _ = std::thread::spawn(move || write_bpf_trace(filename, program_id, header, trace_buffer));
 }
 
 use std::io::{Error, Result, Write};
 
+/// Writes a BPF trace into a file.
+fn write_bpf_trace(filename: String, program_id: String, header: String, trace: String) {
+    const TITLE: &str = "TRACE solana_bpf_loader_program";
+    const FAIL: &str = "Failed to write BPF Trace to file";
+
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(filename.clone())
+        .map_err(|e| warn!("{}: '{}'", e, filename));
+    if file.is_err() {
+        warn!("{} {}", FAIL, filename);
+        return;
+    }
+
+    let mut file = file.unwrap();
+    let timestamp = std::time::SystemTime::now();
+    let r = write!(
+        file,
+        "[{:?} {}] BPF Program: {}",
+        &timestamp, TITLE, program_id
+    )
+    .map_err(|e| warn!("{}: '{}'", e, filename));
+    if r.is_err() {
+        warn!("{} {}", FAIL, filename);
+        return;
+    }
+
+    let r = write!(file, "[{:?} {}] {}\n{}", &timestamp, TITLE, header, trace)
+        .map_err(|e| warn!("{}: '{}'", e, filename));
+    if r.is_err() {
+        warn!("{} {}", FAIL, filename);
+        return;
+    }
+
+    trace!("BPF Trace is written to file {}", filename);
+}
+
 /// Writes a BPF trace into file.
-fn write_bpf_trace(filename: &str, program_id: &str, header: &str, trace: &str) -> Result<()> {
+#[allow(unused)]
+fn write_bpf_trace_old(filename: &str, program_id: &str, header: &str, trace: &str) -> Result<()> {
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
