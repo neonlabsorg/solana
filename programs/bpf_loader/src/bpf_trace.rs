@@ -4,6 +4,7 @@ use super::{BpfError, ThisInstructionMeter};
 use log::{trace, warn};
 use solana_rbpf::vm::EbpfVm;
 use solana_sdk::pubkey::Pubkey;
+use std::thread;
 
 const PORT: &str = "SOLANA_BPF_TRACE_CONTROL";
 const SERVICE: &str = "BPF Trace Control Service";
@@ -60,13 +61,13 @@ pub fn control<'a>(
     // Move writing a trace file into a detached thread (shoot-and-forget)
     let program_id = program_id.to_string();
     let header = header.to_string();
-    let _ = std::thread::spawn(move || write_bpf_trace(filename, program_id, header, trace_buffer));
+    let _ = thread::spawn(move || write_bpf_trace(filename, program_id, header, trace_buffer));
 }
-
-use std::io::{Error, Result, Write};
 
 /// Writes a BPF trace into a file.
 fn write_bpf_trace(filename: String, program_id: String, header: String, trace: String) {
+    use std::io::Write;
+
     const TITLE: &str = "TRACE solana_bpf_loader_program";
     const FAIL: &str = "Failed to write BPF Trace to file";
 
@@ -84,7 +85,7 @@ fn write_bpf_trace(filename: String, program_id: String, header: String, trace: 
     let timestamp = std::time::SystemTime::now();
     let r = write!(
         file,
-        "[{:?} {}] BPF Program: {}",
+        "[{:?} {}] BPF Program: {}\n",
         &timestamp, TITLE, program_id
     )
     .map_err(|e| warn!("{}: '{}'", e, filename));
@@ -101,27 +102,6 @@ fn write_bpf_trace(filename: String, program_id: String, header: String, trace: 
     }
 
     trace!("BPF Trace is written to file {}", filename);
-}
-
-/// Writes a BPF trace into file.
-#[allow(unused)]
-fn write_bpf_trace_old(filename: &str, program_id: &str, header: &str, trace: &str) -> Result<()> {
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(filename)
-        .map_err(|e| Error::new(e.kind(), format!("{}: '{}'", e, filename)))?;
-    let timestamp = std::time::SystemTime::now();
-    write!(
-        file,
-        "[{:?} TRACE solana_bpf_loader_program] BPF Program: {}",
-        &timestamp, program_id
-    )?;
-    write!(
-        file,
-        "[{:?} TRACE solana_bpf_loader_program] {}\n{}",
-        &timestamp, header, trace
-    )
 }
 
 use lazy_static::lazy_static;
@@ -262,7 +242,7 @@ impl TcpServer {
         if listener.is_err() {
             TcpServer::default()
         } else {
-            let _ = std::thread::spawn(move || listen(listener.unwrap()));
+            let _ = thread::spawn(move || listen(listener.unwrap()));
             TcpServer { is_running: true }
         }
     }
@@ -294,6 +274,8 @@ fn handle_connection(mut stream: TcpStream) {
 
 /// Executes a command.
 fn dispatch_command(command: &str, mut stream: TcpStream) {
+    use std::io::Write;
+
     if command == "show" {
         stream.write_all(config_to_string().as_bytes()).ok();
         return;
