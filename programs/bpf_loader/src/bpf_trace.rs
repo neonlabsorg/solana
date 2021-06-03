@@ -381,62 +381,57 @@ fn handle_connection(mut stream: TcpStream) {
     if bytes_read.is_ok() {
         let mut command = String::from_utf8_lossy(&buf[0..bytes_read.unwrap()]).to_string();
         command.retain(|c| !c.is_whitespace());
-        dispatch_command(&command, stream);
+        let resp = dispatch_command(&command);
+        stream.write_all(resp.as_bytes()).ok();
     }
 }
 
-/// Executes a command.
-fn dispatch_command(command: &str, mut stream: TcpStream) {
-    if command == "show" {
-        stream.write_all(config_to_string().as_bytes()).ok();
-        return;
-    } else if command == "enable" {
-        stream.write_all(get_enable().as_bytes()).ok();
-        return;
-    } else if command == "filter" {
-        stream.write_all(get_filter().as_bytes()).ok();
-        return;
-    } else if command == "output" {
-        stream.write_all(get_output().as_bytes()).ok();
-        return;
-    } else if command == "multiple_files" {
-        stream.write_all(get_multiple_files().as_bytes()).ok();
-        return;
-    } else if command == "max_threads" {
-        stream.write_all(get_max_threads().as_bytes()).ok();
-        return;
-    } else if command == "min_program" {
-        stream.write_all(get_min_program().as_bytes()).ok();
-        return;
+const SHOW: &str = "show";
+const ENABLE: &str = "enable";
+const FILTER: &str = "filter";
+const OUTPUT: &str = "output";
+const MULTIPLE_FILES: &str = "multiple_files";
+const MAX_THREADS: &str = "max_threads";
+const MIN_PROGRAM: &str = "min_program";
+
+/// Executes a command and returns corresponding response.
+fn dispatch_command(command: &str) -> String {
+    match command {
+        SHOW => return config_to_string(),
+        ENABLE => return get_enable(),
+        FILTER => return get_filter(),
+        OUTPUT => return get_output(),
+        MULTIPLE_FILES => return get_multiple_files(),
+        MAX_THREADS => return get_max_threads(),
+        MIN_PROGRAM => return get_min_program(),
+        _ => (), // set-command, falling through
     }
 
     let sep = command.find("=").unwrap_or_default();
     if sep == usize::default() {
-        let msg = format!(
+        let resp = format!(
             "Invalid format of BPF trace control parameter '{}'",
             &command
         );
-        warn!("{}", &msg);
-        stream.write_all(msg.as_bytes()).ok();
-        return;
+        warn!("{}", &resp);
+        return resp;
     }
 
     let key = &command[0..sep];
     let value = &command[sep + 1..];
 
     let resp = match key {
-        "enable" => set_enable(value != "false" && value != "0"),
-        "filter" => set_filter(value),
-        "output" => set_output(value),
-        "multiple_files" => set_multiple_files(value != "false" && value != "0"),
-        "max_threads" => set_max_threads(value.parse::<usize>().unwrap_or(DEFAULT_MAX_THREADS)),
-        "min_program" => set_min_program(value.parse::<usize>().unwrap_or(DEFAULT_MIN_PROGRAM)),
+        ENABLE => set_enable(value != "false" && value != "0"),
+        FILTER => set_filter(value),
+        OUTPUT => set_output(value),
+        MULTIPLE_FILES => set_multiple_files(value != "false" && value != "0"),
+        MAX_THREADS => set_max_threads(value.parse::<usize>().unwrap_or(DEFAULT_MAX_THREADS)),
+        MIN_PROGRAM => set_min_program(value.parse::<usize>().unwrap_or(DEFAULT_MIN_PROGRAM)),
         _ => {
             let msg = format!("Unsupported BPF trace control parameter '{}'", &command);
             warn!("{}", &msg);
             msg
         }
     };
-
-    stream.write_all(resp.as_bytes()).ok();
+    resp
 }
