@@ -195,6 +195,14 @@ fn write<W: Write>(out: &mut W, log: &[[u64; 12]], program: &[u8]) -> Result<()>
     Ok(())
 }
 
+const SHOW: &str = "show";
+const ENABLE: &str = "enable";
+const FILTER: &str = "filter";
+const OUTPUT: &str = "output";
+const MULTIPLE_FILES: &str = "multiple_files";
+const MAX_THREADS: &str = "max_threads";
+const MIN_PROGRAM: &str = "min_program";
+
 /// Represents parameters to control BPF tracing.
 #[derive(Clone)]
 struct BpfTraceConfig {
@@ -217,63 +225,78 @@ fn config() -> BpfTraceConfig {
 fn config_to_string() -> String {
     let cfg = CONFIG.lock().unwrap();
     format!(
-        "enable = {}\nfilter = {}\noutput = {}\nmultiple_files = {}\nmax_threads = {}\nmin_program = {}",
-        cfg.enable, cfg.filter, cfg.output, cfg.multiple_files, cfg.max_threads, cfg.min_program
+        "{} = {}\n{} = {}\n{} = {}\n{} = {}\n{} = {}\n{} = {}",
+        ENABLE,
+        cfg.enable,
+        FILTER,
+        cfg.filter,
+        OUTPUT,
+        cfg.output,
+        MULTIPLE_FILES,
+        cfg.multiple_files,
+        MAX_THREADS,
+        cfg.max_threads,
+        MIN_PROGRAM,
+        cfg.min_program
     )
 }
 
 fn get_enable() -> String {
-    format!("enable = {}", CONFIG.lock().unwrap().enable)
+    format!("{} = {}", ENABLE, CONFIG.lock().unwrap().enable)
 }
 
 fn get_filter() -> String {
-    format!("filter = {}", CONFIG.lock().unwrap().filter)
+    format!("{} = {}", FILTER, CONFIG.lock().unwrap().filter)
 }
 
 fn get_output() -> String {
-    format!("output = {}", CONFIG.lock().unwrap().output)
+    format!("{} = {}", OUTPUT, CONFIG.lock().unwrap().output)
 }
 
 fn get_multiple_files() -> String {
-    format!("multiple_files = {}", CONFIG.lock().unwrap().multiple_files)
+    format!(
+        "{} = {}",
+        MULTIPLE_FILES,
+        CONFIG.lock().unwrap().multiple_files
+    )
 }
 
 fn get_max_threads() -> String {
-    format!("max_threads = {}", CONFIG.lock().unwrap().max_threads)
+    format!("{} = {}", MAX_THREADS, CONFIG.lock().unwrap().max_threads)
 }
 
 fn get_min_program() -> String {
-    format!("min_program = {}", CONFIG.lock().unwrap().min_program)
+    format!("{} = {}", MIN_PROGRAM, CONFIG.lock().unwrap().min_program)
 }
 
 fn set_enable(value: bool) -> String {
     CONFIG.lock().unwrap().enable = value;
-    format!("enable = {}", value)
+    format!("{} = {}", ENABLE, value)
 }
 
 fn set_filter(value: &str) -> String {
     CONFIG.lock().unwrap().filter = value.into();
-    format!("filter = {}", value)
+    format!("{} = {}", FILTER, value)
 }
 
 fn set_output(value: &str) -> String {
     CONFIG.lock().unwrap().output = value.into();
-    format!("output = {}", value)
+    format!("{} = {}", OUTPUT, value)
 }
 
 fn set_multiple_files(value: bool) -> String {
     CONFIG.lock().unwrap().multiple_files = value;
-    format!("multiple_files = {}", value)
+    format!("{} = {}", MULTIPLE_FILES, value)
 }
 
 fn set_max_threads(value: usize) -> String {
     CONFIG.lock().unwrap().max_threads = value;
-    format!("max_threads = {}", value)
+    format!("{} = {}", MAX_THREADS, value)
 }
 
 fn set_min_program(value: usize) -> String {
     CONFIG.lock().unwrap().min_program = value;
-    format!("min_program = {}", value)
+    format!("{} = {}", MIN_PROGRAM, value)
 }
 
 const DEFAULT_MAX_THREADS: usize = 2;
@@ -385,14 +408,6 @@ fn handle_connection(mut stream: TcpStream) {
         stream.write_all(resp.as_bytes()).ok();
     }
 }
-
-const SHOW: &str = "show";
-const ENABLE: &str = "enable";
-const FILTER: &str = "filter";
-const OUTPUT: &str = "output";
-const MULTIPLE_FILES: &str = "multiple_files";
-const MAX_THREADS: &str = "max_threads";
-const MIN_PROGRAM: &str = "min_program";
 
 /// Executes a command and returns corresponding response.
 fn dispatch_command(command: &str) -> String {
