@@ -108,14 +108,24 @@ fn increment() {
 fn decrement() {
     let n = THREADS.fetch_sub(1, Ordering::Relaxed);
     trace!("Threads: {}", n - 1);
-    assert!(n >= 0);
+    assert!((n - 1) >= 0);
 }
 
 const TITLE: &str = "TRACE solana_bpf_loader_program";
 const FAIL: &str = "Failed to write BPF Trace to file";
 
 /// Writes binary BPF trace into a file.
-fn write_binary_trace(filename: String, program_id: String, tracer: Tracer) {
+fn write_binary_trace(filename: String, _program_id: String, tracer: Tracer) {
+    /// Transmutes slice of instructions to slice of u8.
+    fn to_byte_slice(v: &[[u64; 12]]) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                v.as_ptr() as *const u8,
+                v.len() * std::mem::size_of::<u64>() * 12,
+            )
+        }
+    }
+
     increment();
     trace!(">Start thread for {}", &filename);
 
@@ -130,47 +140,22 @@ fn write_binary_trace(filename: String, program_id: String, tracer: Tracer) {
         return;
     }
 
-    let mut file = BufWriter::new(file.unwrap());
+    /* No need for buffered output here: we write one big chunk of data with single syscall
+    let mut file = BufWriter::new(file.unwrap()); */
+    let mut file = file.unwrap();
 
-    let timestamp = std::time::SystemTime::now();
-    let r = write!(
-        file,
-        "[{:?} {}] BPF Program: {}\n",
-        &timestamp, TITLE, program_id
-    )
-    .map_err(|e| warn!("{}: '{}'", e, filename));
+    let r = file
+        .write_all(to_byte_slice(&tracer.log))
+        .map_err(|e| warn!("{}: '{}'", e, filename));
     if r.is_err() {
         warn!("{} {}", FAIL, filename);
         decrement();
         return;
     }
 
-    for chunk in &tracer.log {
-        let r = file
-            .write_all(to_byte_slice(chunk))
-            .map_err(|e| warn!("{}: '{}'", e, filename));
-        if r.is_err() {
-            warn!("{} {}", FAIL, filename);
-            decrement();
-            return;
-        }
-    }
-
-    file.flush().ok();
     trace!("BPF Trace is written to file {}", filename);
-
     trace!("Finish thread for {}", &filename);
     decrement();
-}
-
-/// Transmutes slice of u64 to slice of u8.
-fn to_byte_slice(v: &[u64]) -> &[u8] {
-    unsafe {
-        std::slice::from_raw_parts(
-            v.as_ptr() as *const u8,
-            v.len() * std::mem::size_of::<u64>(),
-        )
-    }
 }
 
 /// Writes disassembled BPF trace into a file.
