@@ -50,7 +50,7 @@ pub fn control<'a>(
         return;
     }
 
-    let mut ok = vm.get_program().len() >= cfg.min_program;
+    let mut ok = vm.get_tracer().log.len() >= cfg.min_length;
     if ok {
         ok = if cfg.multiple_files {
             number_of_running_threads() < cfg.max_threads
@@ -254,7 +254,7 @@ const OUTPUT: &str = "output";
 const BINARY: &str = "binary";
 const MULTIPLE_FILES: &str = "multiple_files";
 const MAX_THREADS: &str = "max_threads";
-const MIN_PROGRAM: &str = "min_program";
+const MIN_LENGTH: &str = "min_length";
 
 /// Represents parameters to control BPF tracing.
 #[derive(Clone)]
@@ -265,7 +265,7 @@ struct BpfTraceConfig {
     binary: bool,
     multiple_files: bool,
     max_threads: usize,
-    min_program: usize,
+    min_length: usize,
 }
 
 lazy_static! {
@@ -292,8 +292,8 @@ fn config_to_string() -> String {
         cfg.multiple_files,
         MAX_THREADS,
         cfg.max_threads,
-        MIN_PROGRAM,
-        cfg.min_program
+        MIN_LENGTH,
+        cfg.min_length
     )
 }
 
@@ -325,8 +325,8 @@ fn get_max_threads() -> String {
     format!("{} = {}", MAX_THREADS, CONFIG.lock().unwrap().max_threads)
 }
 
-fn get_min_program() -> String {
-    format!("{} = {}", MIN_PROGRAM, CONFIG.lock().unwrap().min_program)
+fn get_min_length() -> String {
+    format!("{} = {}", MIN_LENGTH, CONFIG.lock().unwrap().min_length)
 }
 
 fn set_enable(value: bool) -> String {
@@ -359,13 +359,13 @@ fn set_max_threads(value: usize) -> String {
     format!("{} = {}", MAX_THREADS, value)
 }
 
-fn set_min_program(value: usize) -> String {
-    CONFIG.lock().unwrap().min_program = value;
-    format!("{} = {}", MIN_PROGRAM, value)
+fn set_min_length(value: usize) -> String {
+    CONFIG.lock().unwrap().min_length = value;
+    format!("{} = {}", MIN_LENGTH, value)
 }
 
 const DEFAULT_MAX_THREADS: usize = 2;
-const DEFAULT_MIN_PROGRAM: usize = 1_000_000;
+const DEFAULT_MIN_LENGTH: usize = 1_000_000;
 
 impl BpfTraceConfig {
     /// Creates config with reasonable initial state.
@@ -377,7 +377,7 @@ impl BpfTraceConfig {
             binary: false,
             multiple_files: true,
             max_threads: DEFAULT_MAX_THREADS,
-            min_program: DEFAULT_MIN_PROGRAM,
+            min_length: DEFAULT_MIN_LENGTH,
         }
     }
 
@@ -485,7 +485,7 @@ fn dispatch_command(command: &str) -> String {
         BINARY => return get_binary(),
         MULTIPLE_FILES => return get_multiple_files(),
         MAX_THREADS => return get_max_threads(),
-        MIN_PROGRAM => return get_min_program(),
+        MIN_LENGTH => return get_min_length(),
         _ => (), // set-command, falling through
     }
 
@@ -509,7 +509,7 @@ fn dispatch_command(command: &str) -> String {
         BINARY => set_binary(value != "false" && value != "0"),
         MULTIPLE_FILES => set_multiple_files(value != "false" && value != "0"),
         MAX_THREADS => set_max_threads(value.parse::<usize>().unwrap_or(DEFAULT_MAX_THREADS)),
-        MIN_PROGRAM => set_min_program(value.parse::<usize>().unwrap_or(DEFAULT_MIN_PROGRAM)),
+        MIN_LENGTH => set_min_length(value.parse::<usize>().unwrap_or(DEFAULT_MIN_LENGTH)),
         _ => {
             let msg = format!("Unsupported BPF trace control parameter '{}'", &command);
             warn!("{}", &msg);
