@@ -19,6 +19,8 @@ pub fn control<'a>(
     vm: &EbpfVm<'a, BpfError, ThisInstructionMeter>,
     program_id: &Pubkey,
 ) {
+    trace!("Feature 'with-bpf-trace-control' is enabled");
+
     let port = std::env::var(PORT).unwrap_or_default();
     if port.is_empty() {
         warn!("Variable '{}' does not exist", PORT);
@@ -43,6 +45,7 @@ pub fn control<'a>(
     }
 
     if cfg.output.is_empty() {
+        // Dump into the standard output
         trace!("{}\n", header);
         let tracer = vm.get_tracer();
         let program = vm.get_program();
@@ -340,21 +343,55 @@ fn set_filter(value: &str) -> String {
 }
 
 fn set_output(value: &str) -> String {
+    if value.is_empty() {
+        if CONFIG.lock().unwrap().binary {
+            return "Binary files should not be dumped into the standard output".into();
+        }
+        if CONFIG.lock().unwrap().multiple_files {
+            return "Cannot dump to the standard output when 'multiple files' enabled".into();
+        }
+        if CONFIG.lock().unwrap().max_threads != 1 {
+            return "Cannot dump to the standard output when 'max_threads' relaxed".into();
+        }
+    }
     CONFIG.lock().unwrap().output = value.into();
     format!("{} = {}", OUTPUT, value)
 }
 
 fn set_binary(value: bool) -> String {
+    if value {
+        if CONFIG.lock().unwrap().output.is_empty() {
+            return "Binary files should not be dumped into the standard output".into();
+        }
+    }
     CONFIG.lock().unwrap().binary = value;
     format!("{} = {}", BINARY, value)
 }
 
 fn set_multiple_files(value: bool) -> String {
+    if value {
+        if CONFIG.lock().unwrap().output.is_empty() {
+            return "Option 'multiple_files' has no effect with dumping to the standard output"
+                .into();
+        }
+    }
     CONFIG.lock().unwrap().multiple_files = value;
     format!("{} = {}", MULTIPLE_FILES, value)
 }
 
 fn set_max_threads(value: usize) -> String {
+    if value == 0 {
+        return "Option 'max_threads' should have a positive value".into();
+    }
+    if value > 1 {
+        if CONFIG.lock().unwrap().output.is_empty() {
+            return "Cannot dump to the standard output when 'max_threads' relaxed".into();
+        }
+        if !CONFIG.lock().unwrap().multiple_files {
+            return "Option 'max_threads' has no sense when writing all traces into a single file"
+                .into();
+        }
+    }
     CONFIG.lock().unwrap().max_threads = value;
     format!("{} = {}", MAX_THREADS, value)
 }
