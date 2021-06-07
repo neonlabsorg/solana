@@ -883,7 +883,6 @@ fn simple_trace<'a>(
     vm: &EbpfVm<'a, BpfError, ThisInstructionMeter>,
     program_id: &Pubkey,
 ) {
-    log::trace!("Feature 'with-bpf-trace-control' is not enabled");
     log::trace!("BPF Program: {}", program_id);
     let mut trace_buffer = String::new();
     vm.get_tracer()
