@@ -1,9 +1,14 @@
 //! mod bpf_trace.
 
 use super::{BpfError, ThisInstructionMeter};
+use lazy_static::lazy_static;
 use log::{trace, warn};
-use solana_rbpf::vm::EbpfVm;
+use solana_rbpf::vm::{EbpfVm, Tracer};
 use solana_sdk::pubkey::Pubkey;
+use std::io::{self, BufWriter, Result, Write};
+use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::Mutex;
+use std::thread;
 
 const PORT: &str = "SOLANA_BPF_TRACE_CONTROL";
 const SERVICE: &str = "BPF Trace Control Service";
@@ -14,23 +19,16 @@ pub fn control<'a>(
     vm: &EbpfVm<'a, BpfError, ThisInstructionMeter>,
     program_id: &Pubkey,
 ) {
-    trace!("BPF Program: {}", program_id);
-
-    let mut trace_buffer = String::new();
-    vm.get_tracer()
-        .write(&mut trace_buffer, vm.get_program())
-        .unwrap();
+    trace!("Feature 'with-bpf-trace-control' is enabled");
 
     let port = std::env::var(PORT).unwrap_or_default();
     if port.is_empty() {
         warn!("Variable '{}' does not exist", PORT);
-        trace!("{}\n{}", header, &trace_buffer);
         return;
     }
 
     if !service_started() {
         warn!("{} did not started", SERVICE);
-        trace!("{}\n{}", header, &trace_buffer);
         return;
     }
 
@@ -47,48 +45,219 @@ pub fn control<'a>(
     }
 
     if cfg.output.is_empty() {
-        trace!("{}\n{}", header, &trace_buffer);
+        // Dump into the standard output
+        trace!("{}\n", header);
+        let tracer = vm.get_tracer();
+        let program = vm.get_program();
+        write_disassembled(&mut io::stdout(), &tracer.log, program).unwrap();
         return;
     }
 
+    let mut ok = vm.get_tracer().log.len() >= cfg.min_length;
+    if ok {
+        ok = if cfg.multiple_files {
+            number_of_running_threads() < cfg.max_threads
+        } else {
+            number_of_running_threads() == 0
+        };
+    }
+
+    trace!("BPF Program: {}", program_id);
+
+    if !ok {
+        warn!(
+            "Skipped: trace.len={}, program size={} bytes",
+            vm.get_tracer().log.len(),
+            vm.get_program().len()
+        );
+        return;
+    }
+
+    // Move writing a trace file into a detached thread (shoot-and-forget)
     let filename = cfg.generate_filename();
-    if filename.is_empty() {
-        trace!("{}\n{}", header, &trace_buffer);
-        return;
-    }
-
-    if let Err(err) = write_bpf_trace(&filename, &program_id.to_string(), header, &trace_buffer) {
-        warn!("{}", err);
-        trace!("{}\n{}", header, &trace_buffer);
-        return;
-    }
-    trace!("BPF Trace is written to file {}", &filename);
+    trace!(
+        "{}: trace.len={}, program size={} bytes",
+        &filename,
+        vm.get_tracer().log.len(),
+        vm.get_program().len()
+    );
+    let program_id = program_id.to_string();
+    let tracer = vm.get_tracer().clone();
+    let _ = if cfg.binary {
+        thread::spawn(move || write_binary_trace(filename, program_id, tracer))
+    } else {
+        let header = header.to_string();
+        let program = vm.get_program().to_vec();
+        thread::spawn(move || write_formatted_trace(filename, program_id, header, tracer, program))
+    };
 }
 
-use std::io::{Error, Result, Write};
+lazy_static! {
+    static ref THREADS: AtomicIsize = AtomicIsize::new(0);
+}
 
-/// Writes a BPF trace into file.
-fn write_bpf_trace(filename: &str, program_id: &str, header: &str, trace: &str) -> Result<()> {
-    let mut file = std::fs::OpenOptions::new()
+fn number_of_running_threads() -> usize {
+    let n = THREADS.load(Ordering::Relaxed);
+    assert!(n >= 0);
+    n as usize
+}
+
+fn increment() {
+    let n = THREADS.fetch_add(1, Ordering::Relaxed);
+    trace!("Threads: {}", n + 1);
+    assert!(n >= 0);
+}
+
+fn decrement() {
+    let n = THREADS.fetch_sub(1, Ordering::Relaxed);
+    trace!("Threads: {}", n - 1);
+    assert!((n - 1) >= 0);
+}
+
+const TITLE: &str = "TRACE solana_bpf_loader_program";
+const FAIL: &str = "Failed to write BPF Trace to file";
+
+/// Writes binary BPF trace into a file.
+fn write_binary_trace(filename: String, _program_id: String, tracer: Tracer) {
+    /// Transmutes slice of instructions to slice of u8.
+    fn to_byte_slice(v: &[[u64; 12]]) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                v.as_ptr() as *const u8,
+                v.len() * std::mem::size_of::<u64>() * 12,
+            )
+        }
+    }
+
+    increment();
+    trace!(">Start thread for {}", &filename);
+
+    let file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(filename)
-        .map_err(|e| Error::new(e.kind(), format!("{}: '{}'", e, filename)))?;
-    let timestamp = std::time::SystemTime::now();
-    write!(
-        file,
-        "[{:?} TRACE solana_bpf_loader_program] BPF Program: {}",
-        &timestamp, program_id
-    )?;
-    write!(
-        file,
-        "[{:?} TRACE solana_bpf_loader_program] {}\n{}",
-        &timestamp, header, trace
-    )
+        .open(filename.clone())
+        .map_err(|e| warn!("{}: '{}'", e, filename));
+    if file.is_err() {
+        warn!("{} {}", FAIL, filename);
+        decrement();
+        return;
+    }
+
+    /* No need for buffered output here: we write one big chunk of data with single syscall
+    let mut file = BufWriter::new(file.unwrap()); */
+    let mut file = file.unwrap();
+
+    let r = file
+        .write_all(to_byte_slice(&tracer.log))
+        .map_err(|e| warn!("{}: '{}'", e, filename));
+    if r.is_err() {
+        warn!("{} {}", FAIL, filename);
+        decrement();
+        return;
+    }
+
+    trace!("BPF Trace is written to file {}", filename);
+    trace!("Finish thread for {}", &filename);
+    decrement();
 }
 
-use lazy_static::lazy_static;
-use std::sync::Mutex;
+/// Writes disassembled BPF trace into a file.
+fn write_formatted_trace(
+    filename: String,
+    program_id: String,
+    header: String,
+    tracer: Tracer,
+    program: Vec<u8>,
+) {
+    increment();
+    trace!(">Start thread for {}", &filename);
+
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(filename.clone())
+        .map_err(|e| warn!("{}: '{}'", e, filename));
+    if file.is_err() {
+        warn!("{} {}", FAIL, filename);
+        decrement();
+        return;
+    }
+
+    let mut file = BufWriter::new(file.unwrap());
+
+    let timestamp = std::time::SystemTime::now();
+    let r = write!(
+        file,
+        "[{:?} {}] BPF Program: {}\n",
+        &timestamp, TITLE, program_id
+    )
+    .map_err(|e| warn!("{}: '{}'", e, filename));
+    if r.is_err() {
+        warn!("{} {}", FAIL, filename);
+        decrement();
+        return;
+    }
+
+    let r = write!(file, "[{:?} {}] {}\n", &timestamp, TITLE, header)
+        .map_err(|e| warn!("{}: '{}'", e, filename));
+    if r.is_err() {
+        warn!("{} {}", FAIL, filename);
+        decrement();
+        return;
+    }
+
+    let r = write_disassembled(&mut file, &tracer.log, &program)
+        .map_err(|e| warn!("{}: '{}'", e, filename));
+    if r.is_err() {
+        warn!("{} {}", FAIL, filename);
+        decrement();
+        return;
+    }
+
+    file.flush().ok();
+    trace!("BPF Trace is written to file {}", filename);
+
+    trace!("Finish thread for {}", &filename);
+    decrement();
+}
+
+/// Disassembles and writes the program into a file.
+/// No need to create a string buffer, when we just can write to a file.
+/// See also: solana_rbpf::vm::Tracer::write.
+fn write_disassembled<W: Write>(out: &mut W, log: &[[u64; 12]], program: &[u8]) -> Result<()> {
+    use solana_rbpf::{disassembler, ebpf};
+
+    let disassembled = disassembler::to_insn_vec(program);
+    let mut pc_to_instruction_index =
+        vec![0usize; disassembled.last().map(|ins| ins.ptr + 2).unwrap_or(0)];
+    for index in 0..disassembled.len() {
+        pc_to_instruction_index[disassembled[index].ptr] = index;
+        pc_to_instruction_index[disassembled[index].ptr + 1] = index;
+    }
+
+    for index in 0..log.len() {
+        let entry = log[index];
+        writeln!(
+            out,
+            "{:5?} {:016X?} {:5?}: {}",
+            index,
+            &entry[0..11],
+            entry[11] as usize + ebpf::ELF_INSN_DUMP_OFFSET,
+            disassembled[pc_to_instruction_index[entry[11] as usize]].desc,
+        )?;
+    }
+
+    Ok(())
+}
+
+const SHOW: &str = "show";
+const ENABLE: &str = "enable";
+const FILTER: &str = "filter";
+const OUTPUT: &str = "output";
+const BINARY: &str = "binary";
+const MULTIPLE_FILES: &str = "multiple_files";
+const MAX_THREADS: &str = "max_threads";
+const MIN_LENGTH: &str = "min_length";
 
 /// Represents parameters to control BPF tracing.
 #[derive(Clone)]
@@ -96,7 +265,10 @@ struct BpfTraceConfig {
     enable: bool,
     filter: String,
     output: String,
-    multiple: bool,
+    binary: bool,
+    multiple_files: bool,
+    max_threads: usize,
+    min_length: usize,
 }
 
 lazy_static! {
@@ -110,46 +282,127 @@ fn config() -> BpfTraceConfig {
 fn config_to_string() -> String {
     let cfg = CONFIG.lock().unwrap();
     format!(
-        "enable = {}\nfilter = {}\noutput = {}\nmultiple = {}",
-        cfg.enable, cfg.filter, cfg.output, cfg.multiple
+        "{} = {}\n{} = {}\n{} = {}\n{} = {}\n{} = {}\n{} = {}\n{} = {}",
+        ENABLE,
+        cfg.enable,
+        FILTER,
+        cfg.filter,
+        OUTPUT,
+        cfg.output,
+        BINARY,
+        cfg.binary,
+        MULTIPLE_FILES,
+        cfg.multiple_files,
+        MAX_THREADS,
+        cfg.max_threads,
+        MIN_LENGTH,
+        cfg.min_length
     )
 }
 
 fn get_enable() -> String {
-    format!("enable = {}", CONFIG.lock().unwrap().enable)
+    format!("{} = {}", ENABLE, CONFIG.lock().unwrap().enable)
 }
 
 fn get_filter() -> String {
-    format!("filter = {}", CONFIG.lock().unwrap().filter)
+    format!("{} = {}", FILTER, CONFIG.lock().unwrap().filter)
 }
 
 fn get_output() -> String {
-    format!("output = {}", CONFIG.lock().unwrap().output)
+    format!("{} = {}", OUTPUT, CONFIG.lock().unwrap().output)
 }
 
-fn get_multiple() -> String {
-    format!("multiple = {}", CONFIG.lock().unwrap().multiple)
+fn get_binary() -> String {
+    format!("{} = {}", BINARY, CONFIG.lock().unwrap().binary)
+}
+
+fn get_multiple_files() -> String {
+    format!(
+        "{} = {}",
+        MULTIPLE_FILES,
+        CONFIG.lock().unwrap().multiple_files
+    )
+}
+
+fn get_max_threads() -> String {
+    format!("{} = {}", MAX_THREADS, CONFIG.lock().unwrap().max_threads)
+}
+
+fn get_min_length() -> String {
+    format!("{} = {}", MIN_LENGTH, CONFIG.lock().unwrap().min_length)
 }
 
 fn set_enable(value: bool) -> String {
     CONFIG.lock().unwrap().enable = value;
-    format!("enable = {}", value)
+    format!("{} = {}", ENABLE, value)
 }
 
 fn set_filter(value: &str) -> String {
     CONFIG.lock().unwrap().filter = value.into();
-    format!("filter = {}", value)
+    format!("{} = {}", FILTER, value)
 }
 
 fn set_output(value: &str) -> String {
+    if value.is_empty() {
+        if CONFIG.lock().unwrap().binary {
+            return "Binary files should not be dumped into the standard output".into();
+        }
+        if CONFIG.lock().unwrap().multiple_files {
+            return "Cannot dump to the standard output when 'multiple files' enabled".into();
+        }
+        if CONFIG.lock().unwrap().max_threads != 1 {
+            return "Cannot dump to the standard output when 'max_threads' relaxed".into();
+        }
+    }
     CONFIG.lock().unwrap().output = value.into();
-    format!("output = {}", value)
+    format!("{} = {}", OUTPUT, value)
 }
 
-fn set_multiple(value: bool) -> String {
-    CONFIG.lock().unwrap().multiple = value;
-    format!("multiple = {}", value)
+fn set_binary(value: bool) -> String {
+    if value {
+        if CONFIG.lock().unwrap().output.is_empty() {
+            return "Binary files should not be dumped into the standard output".into();
+        }
+    }
+    CONFIG.lock().unwrap().binary = value;
+    format!("{} = {}", BINARY, value)
 }
+
+fn set_multiple_files(value: bool) -> String {
+    if value {
+        if CONFIG.lock().unwrap().output.is_empty() {
+            return "Option 'multiple_files' has no effect with dumping to the standard output"
+                .into();
+        }
+    }
+    CONFIG.lock().unwrap().multiple_files = value;
+    format!("{} = {}", MULTIPLE_FILES, value)
+}
+
+fn set_max_threads(value: usize) -> String {
+    if value == 0 {
+        return "Option 'max_threads' should have a positive value".into();
+    }
+    if value > 1 {
+        if CONFIG.lock().unwrap().output.is_empty() {
+            return "Cannot dump to the standard output when 'max_threads' relaxed".into();
+        }
+        if !CONFIG.lock().unwrap().multiple_files {
+            return "Option 'max_threads' has no sense when writing all traces into a single file"
+                .into();
+        }
+    }
+    CONFIG.lock().unwrap().max_threads = value;
+    format!("{} = {}", MAX_THREADS, value)
+}
+
+fn set_min_length(value: usize) -> String {
+    CONFIG.lock().unwrap().min_length = value;
+    format!("{} = {}", MIN_LENGTH, value)
+}
+
+const DEFAULT_MAX_THREADS: usize = 2;
+const DEFAULT_MIN_LENGTH: usize = 1_000_000;
 
 impl BpfTraceConfig {
     /// Creates config with reasonable initial state.
@@ -158,7 +411,10 @@ impl BpfTraceConfig {
             enable: true,
             filter: String::default(),
             output: "/tmp/trace".into(),
-            multiple: true,
+            binary: false,
+            multiple_files: true,
+            max_threads: DEFAULT_MAX_THREADS,
+            min_length: DEFAULT_MIN_LENGTH,
         }
     }
 
@@ -185,7 +441,7 @@ impl BpfTraceConfig {
                 name += &self.filter[0..sep];
             }
         }
-        if self.multiple {
+        if self.multiple_files {
             let now = std::time::SystemTime::now();
             let epoch = now.duration_since(std::time::SystemTime::UNIX_EPOCH);
             if let Ok(epoch) = epoch {
@@ -225,7 +481,7 @@ impl TcpServer {
         if listener.is_err() {
             TcpServer::default()
         } else {
-            let _ = std::thread::spawn(move || listen(listener.unwrap()));
+            let _ = thread::spawn(move || listen(listener.unwrap()));
             TcpServer { is_running: true }
         }
     }
@@ -245,60 +501,57 @@ fn listen(listener: TcpListener) {
 
 /// Accepts a control input and handles it.
 fn handle_connection(mut stream: TcpStream) {
-    use std::io::Read;
+    use io::Read;
     let mut buf = [0; 256];
     let bytes_read = stream.read(&mut buf).map_err(|e| warn!("{}", e));
     if bytes_read.is_ok() {
         let mut command = String::from_utf8_lossy(&buf[0..bytes_read.unwrap()]).to_string();
         command.retain(|c| !c.is_whitespace());
-        dispatch_command(&command, stream);
+        let resp = dispatch_command(&command);
+        stream.write_all(resp.as_bytes()).ok();
     }
 }
 
-/// Executes a command.
-fn dispatch_command(command: &str, mut stream: TcpStream) {
-    if command == "show" {
-        stream.write_all(config_to_string().as_bytes()).ok();
-        return;
-    } else if command == "enable" {
-        stream.write_all(get_enable().as_bytes()).ok();
-        return;
-    } else if command == "filter" {
-        stream.write_all(get_filter().as_bytes()).ok();
-        return;
-    } else if command == "output" {
-        stream.write_all(get_output().as_bytes()).ok();
-        return;
-    } else if command == "multiple" {
-        stream.write_all(get_multiple().as_bytes()).ok();
-        return;
+/// Executes a command and returns corresponding response.
+fn dispatch_command(command: &str) -> String {
+    match command {
+        SHOW => return config_to_string(),
+        ENABLE => return get_enable(),
+        FILTER => return get_filter(),
+        OUTPUT => return get_output(),
+        BINARY => return get_binary(),
+        MULTIPLE_FILES => return get_multiple_files(),
+        MAX_THREADS => return get_max_threads(),
+        MIN_LENGTH => return get_min_length(),
+        _ => (), // set-command, falling through
     }
 
     let sep = command.find("=").unwrap_or_default();
     if sep == usize::default() {
-        let msg = format!(
+        let resp = format!(
             "Invalid format of BPF trace control parameter '{}'",
             &command
         );
-        warn!("{}", &msg);
-        stream.write_all(msg.as_bytes()).ok();
-        return;
+        warn!("{}", &resp);
+        return resp;
     }
 
     let key = &command[0..sep];
     let value = &command[sep + 1..];
 
     let resp = match key {
-        "enable" => set_enable(value != "false" && value != "0"),
-        "filter" => set_filter(value),
-        "output" => set_output(value),
-        "multiple" => set_multiple(value != "false" && value != "0"),
+        ENABLE => set_enable(value != "false" && value != "0"),
+        FILTER => set_filter(value),
+        OUTPUT => set_output(value),
+        BINARY => set_binary(value != "false" && value != "0"),
+        MULTIPLE_FILES => set_multiple_files(value != "false" && value != "0"),
+        MAX_THREADS => set_max_threads(value.parse::<usize>().unwrap_or(DEFAULT_MAX_THREADS)),
+        MIN_LENGTH => set_min_length(value.parse::<usize>().unwrap_or(DEFAULT_MIN_LENGTH)),
         _ => {
             let msg = format!("Unsupported BPF trace control parameter '{}'", &command);
             warn!("{}", &msg);
             msg
         }
     };
-
-    stream.write_all(resp.as_bytes()).ok();
+    resp
 }
