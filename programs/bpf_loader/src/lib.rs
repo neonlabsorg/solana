@@ -9,12 +9,15 @@ pub mod upgradeable;
 pub mod upgradeable_with_jit;
 pub mod with_jit;
 
+#[cfg(feature = "with-bpf-trace-control")]
+mod bpf_trace;
+
 use crate::{
     bpf_verifier::VerifierError,
     serialization::{deserialize_parameters, serialize_parameters},
     syscalls::SyscallError,
 };
-use log::{log_enabled, trace, Level::Trace};
+use log::{log_enabled, Level::Trace};
 use solana_measure::measure::Measure;
 use solana_rbpf::{
     aligned_memory::AlignedMemory,
@@ -824,11 +827,11 @@ impl Executor for BpfExecutor {
                 before
             );
             if log_enabled!(Trace) {
-                let mut trace_buffer = String::new();
-                vm.get_tracer()
-                    .write(&mut trace_buffer, vm.get_program())
-                    .unwrap();
-                trace!("BPF Program Instruction Trace:\n{}", trace_buffer);
+                const HEADER: &str = "BPF Program Instruction Trace:";
+                #[cfg(feature = "with-bpf-trace-control")]
+                bpf_trace::control(HEADER, &vm, program_id);
+                #[cfg(not(feature = "with-bpf-trace-control"))]
+                simple_trace(HEADER, &vm, program_id);
             }
             match result {
                 Ok(status) => {
@@ -871,6 +874,21 @@ impl Executor for BpfExecutor {
         stable_log::program_success(&logger, program_id);
         Ok(())
     }
+}
+
+/// Just dumps the trace into the standard output.
+#[cfg(not(feature = "with-bpf-trace-control"))]
+fn simple_trace<'a>(
+    header: &str,
+    vm: &EbpfVm<'a, BpfError, ThisInstructionMeter>,
+    program_id: &Pubkey,
+) {
+    log::trace!("BPF Program: {}", program_id);
+    let mut trace_buffer = String::new();
+    vm.get_tracer()
+        .write(&mut trace_buffer, vm.get_program())
+        .unwrap();
+    log::trace!("{}\n{}", header, trace_buffer);
 }
 
 #[cfg(test)]

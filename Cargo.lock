@@ -4194,6 +4194,7 @@ version = "1.6.9"
 dependencies = [
  "bincode",
  "byteorder",
+ "lazy_static",
  "libsecp256k1 0.5.0",
  "log 0.4.11",
  "num-derive",
