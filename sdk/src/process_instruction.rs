@@ -145,7 +145,7 @@ impl Default for BpfComputeBudget {
 impl BpfComputeBudget {
     pub fn new() -> Self {
         BpfComputeBudget {
-            max_units: 400_000,
+            max_units: 500_000,
             log_units: 100,
             log_64_units: 100,
             create_program_address_units: 1500,
