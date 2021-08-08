@@ -30,7 +30,7 @@ pub const SUCCESS: u64 = 0;
 /// Start address of the memory region used for program heap.
 pub const HEAP_START_ADDRESS: usize = 0x300000000;
 /// Length of the heap memory region used for program heap.
-pub const HEAP_LENGTH: usize = 32 * 1024;
+pub const HEAP_LENGTH: usize = 1024 * 1024;
 
 /// Declare the entry point of the program and use the default local heap
 /// implementation

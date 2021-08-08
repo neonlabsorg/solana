@@ -1152,8 +1152,8 @@ impl MessageProcessor {
             && *program_id == crate::neon_evm_program::id()
         {
             // Bump the compute budget for neon_evm
-            bpf_compute_budget.max_units = 500_000;
-            bpf_compute_budget.heap_size = Some(256 * 1024);
+            bpf_compute_budget.max_units = 200_000_000;
+            bpf_compute_budget.heap_size = Some(1024 * 1024);
         }
 
         let mut invoke_context = ThisInvokeContext::new(
