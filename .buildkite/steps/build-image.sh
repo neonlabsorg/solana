@@ -3,4 +3,4 @@ set -euo pipefail
 
 REVISION=$(git rev-parse HEAD)
 
-docker build -t cybercoredev/solana:${REVISION} .
+docker build -t neonlabsorg/solana:${REVISION} .
