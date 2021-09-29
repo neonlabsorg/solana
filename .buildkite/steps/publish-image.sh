@@ -15,7 +15,7 @@ else
     TAG=${BUILDKITE_BRANCH}
 fi
 
-docker pull cybercoredev/solana:${REVISION}
-docker tag cybercoredev/solana:${REVISION} cybercoredev/solana:${TAG}
-docker push cybercoredev/solana:${TAG}
+docker pull neonlabsorg/solana:${REVISION}
+docker tag neonlabsorg/solana:${REVISION} neonlabsorg/solana:${TAG}
+docker push neonlabsorg/solana:${TAG}
 
