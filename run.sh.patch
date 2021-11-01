@@ -1,7 +1,7 @@
-diff --git a/run.sh b/run.sh
+diff --git a/scripts/run.sh b/scripts/run.sh
 index 1745ebb5a..b32e7cf1f 100755
---- a/run.sh
-+++ b/run.sh
+--- a/scripts/run.sh
++++ b/scripts/run.sh
 @@ -99,6 +99,7 @@ args=(
    --identity "$dataDir"/validator-identity.json
    --vote-account "$dataDir"/validator-vote-account.json

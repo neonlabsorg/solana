@@ -22,7 +22,7 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/target/release/solana-genesis \
                     /opt/solana/bin/
 
-COPY --from=builder /opt/run.sh /opt/fetch-spl.sh /opt/solana/
+COPY --from=builder /opt/scripts/run.sh /opt/fetch-spl.sh /opt/solana/
 
 ENV PATH /opt/solana/bin/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WORKDIR /opt/solana
