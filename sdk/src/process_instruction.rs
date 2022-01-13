@@ -181,6 +181,12 @@ pub struct BpfComputeBudget {
     pub sysvar_base_cost: u64,
     /// Number of compute units consumed to call secp256k1_recover
     pub secp256k1_recover_cost: u64,
+    /// Number of compute units consumed to call alt_bn128_addition
+    pub alt_bn128_addition_cost: u64,
+    /// Number of compute units consumed to call alt_bn128_multiplication.
+    pub alt_bn128_multiplication_cost: u64,
+    /// Number of compute units consumed to call alt_bn128_pairing.
+    pub alt_bn128_pairing_cost: u64,
     /// Optional program heap region size, if `None` then loader default
     pub heap_size: Option<usize>,
 }
@@ -207,6 +213,9 @@ impl BpfComputeBudget {
             cpi_bytes_per_unit: 250,        // ~50MB at 200,000 units
             sysvar_base_cost: 100,
             secp256k1_recover_cost: 25_000,
+            alt_bn128_addition_cost: 500,
+            alt_bn128_multiplication_cost: 40_000,
+            alt_bn128_pairing_cost: 200_000,
             heap_size: None,
         }
     }

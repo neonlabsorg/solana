@@ -13,15 +13,18 @@ use solana_sdk::{
     account::{Account, AccountSharedData, ReadableAccount},
     account_info::AccountInfo,
     account_utils::StateMut,
+    alt_bn128::prelude::*,
     bpf_loader, bpf_loader_deprecated,
     bpf_loader_upgradeable::{self, UpgradeableLoaderState},
     clock::Clock,
     entrypoint::{MAX_PERMITTED_DATA_INCREASE, SUCCESS},
     epoch_schedule::EpochSchedule,
     feature_set::{
-        cpi_data_cost, enforce_aligned_host_addrs, keccak256_syscall_enabled,
-        libsecp256k1_0_5_upgrade_enabled, memory_ops_syscalls, secp256k1_recover_syscall_enabled,
-        set_upgrade_authority_via_cpi_enabled, sysvar_via_syscall, update_data_on_realloc,
+        alt_bn128_addition_syscall_enabled, alt_bn128_multiplication_syscall_enabled,
+        alt_bn128_pairing_syscall_enabled, cpi_data_cost, enforce_aligned_host_addrs,
+        keccak256_syscall_enabled, libsecp256k1_0_5_upgrade_enabled, memory_ops_syscalls,
+        secp256k1_recover_syscall_enabled, set_upgrade_authority_via_cpi_enabled,
+        sysvar_via_syscall, update_data_on_realloc,
     },
     hash::{Hasher, HASH_BYTES},
     ic_msg,
@@ -160,6 +163,26 @@ pub fn register_syscalls(
         syscall_registry.register_syscall_by_name(b"sol_memmove_", SyscallMemmove::call)?;
         syscall_registry.register_syscall_by_name(b"sol_memcmp_", SyscallMemcmp::call)?;
         syscall_registry.register_syscall_by_name(b"sol_memset_", SyscallMemset::call)?;
+    }
+
+    // alt_bn128_addition
+    if invoke_context.is_feature_active(&alt_bn128_addition_syscall_enabled::id()) {
+        syscall_registry
+            .register_syscall_by_name(b"sol_alt_bn128_addition", SyscallAltBn128Addition::call)?;
+    }
+
+    // alt_bn128_multiplication
+    if invoke_context.is_feature_active(&alt_bn128_multiplication_syscall_enabled::id()) {
+        syscall_registry.register_syscall_by_name(
+            b"sol_alt_bn128_multiplication",
+            SyscallAltBn128Multiplication::call,
+        )?;
+    }
+
+    // alt_bn128_pairing
+    if invoke_context.is_feature_active(&alt_bn128_pairing_syscall_enabled::id()) {
+        syscall_registry
+            .register_syscall_by_name(b"sol_alt_bn128_pairing", SyscallAltBn128Pairing::call)?;
     }
 
     // Cross-program invocation syscalls
@@ -334,6 +357,39 @@ pub fn bind_syscall_context_objects<'a>(
             loader_id,
             libsecp256k1_0_5_upgrade_enabled: invoke_context
                 .is_feature_active(&libsecp256k1_0_5_upgrade_enabled::id()),
+        }),
+    );
+
+    // alt_bn128_addition
+    bind_feature_gated_syscall_context_object!(
+        vm,
+        invoke_context.is_feature_active(&alt_bn128_addition_syscall_enabled::id()),
+        Box::new(SyscallAltBn128Addition {
+            cost: bpf_compute_budget.alt_bn128_addition_cost,
+            compute_meter: invoke_context.get_compute_meter(),
+            loader_id,
+        }),
+    );
+
+    // alt_bn128_multiplication
+    bind_feature_gated_syscall_context_object!(
+        vm,
+        invoke_context.is_feature_active(&alt_bn128_multiplication_syscall_enabled::id()),
+        Box::new(SyscallAltBn128Multiplication {
+            cost: bpf_compute_budget.alt_bn128_multiplication_cost,
+            compute_meter: invoke_context.get_compute_meter(),
+            loader_id,
+        }),
+    );
+
+    // alt_bn128_pairing
+    bind_feature_gated_syscall_context_object!(
+        vm,
+        invoke_context.is_feature_active(&alt_bn128_pairing_syscall_enabled::id()),
+        Box::new(SyscallAltBn128Pairing {
+            cost: bpf_compute_budget.alt_bn128_pairing_cost,
+            compute_meter: invoke_context.get_compute_meter(),
+            loader_id,
         }),
     );
 
@@ -1438,6 +1494,166 @@ impl<'a> SyscallObject<BpfError> for SyscallSecp256k1Recover<'a> {
         };
 
         secp256k1_recover_result.copy_from_slice(&public_key[1..65]);
+        *result = Ok(SUCCESS);
+    }
+}
+
+/// alt_bn128 addition
+pub struct SyscallAltBn128Addition<'a> {
+    cost: u64,
+    compute_meter: Rc<RefCell<dyn ComputeMeter>>,
+    loader_id: &'a Pubkey,
+}
+
+impl<'a> SyscallObject<BpfError> for SyscallAltBn128Addition<'a> {
+    fn call(
+        &mut self,
+        input_addr: u64,
+        input_size: u64,
+        result_addr: u64,
+        _arg4: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        question_mark!(self.compute_meter.consume(self.cost), result);
+
+        let input = question_mark!(
+            translate_slice::<u8>(memory_mapping, input_addr, input_size, self.loader_id, true),
+            result
+        );
+        let call_result = question_mark!(
+            translate_slice_mut::<u8>(
+                memory_mapping,
+                result_addr,
+                ALT_BN128_ADDITION_OUTPUT_LEN as u64,
+                self.loader_id,
+                true
+            ),
+            result
+        );
+
+        let result_point = match alt_bn128_addition(input) {
+            Ok(result_point) => result_point,
+            Err(e) => {
+                *result = Ok(e.into());
+                return;
+            }
+        };
+
+        if result_point.len() != ALT_BN128_ADDITION_OUTPUT_LEN {
+            *result = Ok(AltBn128Error::SliceOutOfBounds.into());
+            return;
+        }
+
+        call_result.copy_from_slice(&result_point);
+        *result = Ok(SUCCESS);
+    }
+}
+
+/// alt_bn128 scalar multiplication
+pub struct SyscallAltBn128Multiplication<'a> {
+    cost: u64,
+    compute_meter: Rc<RefCell<dyn ComputeMeter>>,
+    loader_id: &'a Pubkey,
+}
+
+impl<'a> SyscallObject<BpfError> for SyscallAltBn128Multiplication<'a> {
+    fn call(
+        &mut self,
+        input_addr: u64,
+        input_size: u64,
+        result_addr: u64,
+        _arg4: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        question_mark!(self.compute_meter.consume(self.cost), result);
+
+        let input = question_mark!(
+            translate_slice::<u8>(memory_mapping, input_addr, input_size, self.loader_id, true),
+            result
+        );
+        let call_result = question_mark!(
+            translate_slice_mut::<u8>(
+                memory_mapping,
+                result_addr,
+                ALT_BN128_MULTIPLICATION_OUTPUT_LEN as u64,
+                self.loader_id,
+                true
+            ),
+            result
+        );
+
+        let result_point = match alt_bn128_multiplication(input) {
+            Ok(result_point) => result_point,
+            Err(e) => {
+                *result = Ok(e.into());
+                return;
+            }
+        };
+
+        if result_point.len() != ALT_BN128_MULTIPLICATION_OUTPUT_LEN {
+            *result = Ok(AltBn128Error::SliceOutOfBounds.into());
+            return;
+        }
+
+        call_result.copy_from_slice(&result_point);
+        *result = Ok(SUCCESS);
+    }
+}
+
+/// alt_bn128 pairing equation
+#[allow(dead_code)]
+pub struct SyscallAltBn128Pairing<'a> {
+    cost: u64,
+    compute_meter: Rc<RefCell<dyn ComputeMeter>>,
+    loader_id: &'a Pubkey,
+}
+
+impl<'a> SyscallObject<BpfError> for SyscallAltBn128Pairing<'a> {
+    fn call(
+        &mut self,
+        input_addr: u64,
+        input_size: u64,
+        result_addr: u64,
+        _arg4: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        question_mark!(self.compute_meter.consume(self.cost), result);
+
+        let input = question_mark!(
+            translate_slice::<u8>(memory_mapping, input_addr, input_size, self.loader_id, true),
+            result
+        );
+        let call_result = question_mark!(
+            translate_slice_mut::<u8>(
+                memory_mapping,
+                result_addr,
+                ALT_BN128_PAIRING_OUTPUT_LEN as u64,
+                self.loader_id,
+                true
+            ),
+            result
+        );
+
+        let result_point = match alt_bn128_pairing(input) {
+            Ok(result_point) => result_point,
+            Err(e) => {
+                *result = Ok(e.into());
+                return;
+            }
+        };
+
+        if result_point.len() != ALT_BN128_PAIRING_OUTPUT_LEN {
+            *result = Ok(AltBn128Error::SliceOutOfBounds.into());
+            return;
+        }
+
+        call_result.copy_from_slice(&result_point);
         *result = Ok(SUCCESS);
     }
 }

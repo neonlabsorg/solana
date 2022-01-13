@@ -139,6 +139,18 @@ pub mod system_transfer_zero_check {
     solana_sdk::declare_id!("BrTR9hzw4WBGFP65AJMbpAo64DcA3U6jdPSga9fMV5cS");
 }
 
+pub mod alt_bn128_addition_syscall_enabled {
+    solana_sdk::declare_id!("6RvdSWHh8oh72Dp7wMTS2DBkf3fRPtChfNrAo3cZZoXJ");
+}
+
+pub mod alt_bn128_multiplication_syscall_enabled {
+    solana_sdk::declare_id!("6RvdSWHh8oh72Dp7wMTS2DBkf3fRPtChfNrAo3cZZoXJ");
+}
+
+pub mod alt_bn128_pairing_syscall_enabled {
+    solana_sdk::declare_id!("BTW2pSyErTj4BV6KBM9NZ9VBUJVxt7sacNWcf76wtzb2");
+}
+
 pub mod dedupe_config_program_signers {
     solana_sdk::declare_id!("8kEuAshXLsgkUEdcFVLqrjCGGHVWFW99ZZpxvAzzMtBp");
 }
