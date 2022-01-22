@@ -14,8 +14,9 @@ use {
 use {
     bigint::U256,
     bn::{pairing, AffineG1, AffineG2, Fq, Fq2, Fr, Group, Gt, G1, G2},
-    consts::*,
 };
+
+use consts::*;
 
 //---- Constants
 
@@ -52,10 +53,10 @@ mod consts {
     const_assert_eq!(ALT_BN128_POINT_SIZE, ALT_BN128_FIELD_SIZE * 2);
 
     /// Internal representation of the EC field (32 bytes).
-    pub(super) type FieldBytes = [u8; ALT_BN128_FIELD_SIZE];
+    pub type FieldBytes = [u8; ALT_BN128_FIELD_SIZE];
 
     /// Internal representation of the EC point (64 bytes).
-    pub(super) type PointBytes = [u8; ALT_BN128_POINT_SIZE];
+    pub type PointBytes = [u8; ALT_BN128_POINT_SIZE];
 }
 
 //---- Custom errors
