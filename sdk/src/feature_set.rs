@@ -140,15 +140,15 @@ pub mod system_transfer_zero_check {
 }
 
 pub mod alt_bn128_addition_syscall_enabled {
-    solana_sdk::declare_id!("6RvdSWHh8oh72Dp7wMTS2DBkf3fRPtChfNrAo3cZZoXJ");
+    solana_sdk::declare_id!("7Ua8mFtahVfA3WCY9LoXDAJJdvJRJHckvSSr1dD8FTWc");
 }
 
 pub mod alt_bn128_multiplication_syscall_enabled {
-    solana_sdk::declare_id!("6RvdSWHh8oh72Dp7wMTS2DBkf3fRPtChfNrAo3cZZoXJ");
+    solana_sdk::declare_id!("7Ua8mFtahVfA3WCY9LoXDAJJdvJRJHckvSSr1dD8FTWc");
 }
 
 pub mod alt_bn128_pairing_syscall_enabled {
-    solana_sdk::declare_id!("BTW2pSyErTj4BV6KBM9NZ9VBUJVxt7sacNWcf76wtzb2");
+    solana_sdk::declare_id!("7Ua8mFtahVfA3WCY9LoXDAJJdvJRJHckvSSr1dD8FTWc");
 }
 
 pub mod dedupe_config_program_signers {

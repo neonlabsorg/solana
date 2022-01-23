@@ -479,7 +479,7 @@ uint64_t sol_alt_bn128_addition(
  * @param result 64 byte array to hold the result. ...
  * @return 0 if executed successfully
  */
-uint64_t sol_alt_bn128_addition(
+uint64_t sol_alt_bn128_multiplication(
     const uint8_t *input,
     const unit64_t input_size,
     uint8_t *result
@@ -493,7 +493,7 @@ uint64_t sol_alt_bn128_addition(
  * @param result 64 byte array to hold the result. ...
  * @return 0 if executed successfully
  */
-uint64_t sol_alt_bn128_addition(
+uint64_t sol_alt_bn128_pairing(
     const uint8_t *input,
     const unit64_t input_size,
     uint8_t *result
