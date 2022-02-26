@@ -19,6 +19,7 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/target/release/solana-faucet \
                     /opt/target/release/solana-keygen \
                     /opt/target/release/solana-validator \
+		    /opt/target/release/solana-test-validator \
                     /opt/target/release/solana-genesis \
                     /opt/solana/bin/
 
