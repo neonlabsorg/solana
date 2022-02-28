@@ -10,6 +10,7 @@ use {
     },
     log::*,
     solana_runtime::{
+        account_dumper::Config as AccountDumperConfig,
         accounts_update_notifier_interface::AccountsUpdateNotifier,
         bank_forks::{ArchiveFormat, BankForks, SnapshotConfig},
         snapshot_utils,
@@ -43,6 +44,7 @@ pub fn load(
     account_paths: Vec<PathBuf>,
     shrink_paths: Option<Vec<PathBuf>>,
     snapshot_config: Option<&SnapshotConfig>,
+    account_dumper_config: Option<AccountDumperConfig>,
     process_options: ProcessOptions,
     transaction_status_sender: Option<&TransactionStatusSender>,
     cache_block_meta_sender: Option<&CacheBlockMetaSender>,
@@ -76,6 +78,7 @@ pub fn load(
                 archive_hash,
                 archive_format,
                 accounts_update_notifier,
+                account_dumper_config,
             );
         } else {
             info!("No snapshot package available; will load from genesis");
@@ -91,6 +94,7 @@ pub fn load(
         process_options,
         cache_block_meta_sender,
         accounts_update_notifier,
+        account_dumper_config,
     )
 }
 
@@ -101,6 +105,7 @@ fn load_from_genesis(
     process_options: ProcessOptions,
     cache_block_meta_sender: Option<&CacheBlockMetaSender>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> LoadResult {
     info!("Processing ledger from genesis");
     to_loadresult(
@@ -111,6 +116,7 @@ fn load_from_genesis(
             process_options,
             cache_block_meta_sender,
             accounts_update_notifier,
+            account_dumper_config,
         ),
         None,
     )
@@ -131,6 +137,7 @@ fn load_from_snapshot(
     archive_hash: Hash,
     archive_format: ArchiveFormat,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> LoadResult {
     info!("Loading snapshot package: {:?}", archive_filename);
 
@@ -156,6 +163,7 @@ fn load_from_snapshot(
         process_options.accounts_db_test_hash_calculation,
         process_options.accounts_db_skip_shrink,
         accounts_update_notifier,
+        account_dumper_config,
     )
     .expect("Load from snapshot failed");
     if let Some(shrink_paths) = shrink_paths {

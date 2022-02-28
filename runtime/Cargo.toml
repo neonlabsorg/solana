@@ -18,6 +18,8 @@ byteorder = "1.3.4"
 bzip2 = "0.3.3"
 dashmap = { version = "4.0.2", features = ["rayon", "raw-api"] }
 crossbeam-channel = "0.4"
+clickhouse = "0.8.1"
+# crossbeam-channel = "0.5"
 dir-diff = "0.3.2"
 flate2 = "1.0.14"
 fnv = "1.0.7"
@@ -31,6 +33,7 @@ num-derive = { version = "0.3" }
 num-traits = { version = "0.2" }
 num_cpus = "1.13.0"
 ouroboros = "0.10.0"
+once_cell = "1.8.0"
 rand = "0.7.0"
 rayon = "1.5.0"
 regex = "1.3.9"
@@ -54,6 +57,21 @@ tar = "0.4.37"
 tempfile = "3.1.0"
 thiserror = "1.0"
 zstd = "0.5.1"
+tokio = { version = "1.0", features = ["full"] }
+backoff = "0.3"
+futures-util = "0.3"
+generic-array = { version = "0.14.4", default-features = false, features = ["serde", "more_lengths"] }
+clap = "2.33.1"
+hex = "0.4.3"
+rlp = "0.5"
+
+[dependencies.evm-loader]
+git = "https://github.com/neonlabsorg/neon-evm/"
+tag = "v0.4.1"
+
+[dependencies.evm]
+git = "https://github.com/neonlabsorg/evm"
+rev = "ec25260ced4d1054fcb1c8a02aa91e1e5d0be531"
 
 [lib]
 crate-type = ["lib"]

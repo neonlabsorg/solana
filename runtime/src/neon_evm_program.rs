@@ -6,6 +6,7 @@ pub mod tests {
 
     #[test]
     fn test_id() {
+        assert!(check_id(&id()));
         id().log();
     }
 }
