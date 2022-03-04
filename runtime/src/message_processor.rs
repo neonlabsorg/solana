@@ -8,9 +8,9 @@ use {
     serde::{Deserialize, Serialize},
     solana_measure::measure::Measure,
     //use solana_program_runtime::{ExecuteDetailsTimings, Executors, InstructionProcessor, PreAccount};
-    use evm_loader::instruction::EvmInstruction;
-    use solana_sdk::signature::Signature;
+    evm_loader::instruction::EvmInstruction,
     solana_sdk::{
+        signature::Signature,
         account::{AccountSharedData, ReadableAccount, WritableAccount},
         account_utils::StateMut,
         bpf_loader_upgradeable::{self, UpgradeableLoaderState},
