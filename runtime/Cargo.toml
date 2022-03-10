@@ -67,11 +67,13 @@ rlp = "0.5"
 
 [dependencies.evm-loader]
 git = "https://github.com/neonlabsorg/neon-evm/"
-tag = "v0.4.1"
+rev = "470604b81c99192701b3d67aa55eab4688d74ef9"
+#branch = "develop"
 
 [dependencies.evm]
 git = "https://github.com/neonlabsorg/evm"
-rev = "ec25260ced4d1054fcb1c8a02aa91e1e5d0be531"
+rev = "10987ba5baa7047accb2d6150d7d449535ce734c"
+#branch = "develop"
 
 [lib]
 crate-type = ["lib"]
