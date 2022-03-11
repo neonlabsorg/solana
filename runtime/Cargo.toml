@@ -67,13 +67,11 @@ rlp = "0.5"
 
 [dependencies.evm-loader]
 git = "https://github.com/neonlabsorg/neon-evm/"
-rev = "470604b81c99192701b3d67aa55eab4688d74ef9"
-#branch = "develop"
+branch = "ci-tracing-api-0.4.1"
 
 [dependencies.evm]
 git = "https://github.com/neonlabsorg/evm"
-rev = "10987ba5baa7047accb2d6150d7d449535ce734c"
-#branch = "develop"
+branch = "ci-tracing-api-0.4.1"
 
 [lib]
 crate-type = ["lib"]
