@@ -1483,14 +1483,17 @@ impl MessageProcessor {
                 };
                 let _ = neon_ix.visit_each_account(&mut work);
 
-                match EvmInstruction::unpack(neon_ix.data.as_slice()) {
-                    Ok(evm_instruction) => account_dumper.evm_transaction_executed(
+                let (tag, evm_ix_data) = neon_ix.data.split_first().unwrap();
+
+                match EvmInstruction::parse(tag) {
+                    Ok(evm_ix) => account_dumper.evm_transaction_executed(
+                        evm_ix,
+                        evm_ix_data,
                         first_signature,
-                        evm_instruction,
                         sorted_pre_accounts,
                     ),
                     Err(err) => {
-                        error!("failed to unpack evm instruction {:?}", err);
+                        error!("failed to parse evm instruction {:?}", err);
                     }
                 }
             }

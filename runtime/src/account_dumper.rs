@@ -33,6 +33,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use arrayref::{array_ref};
 
 pub const DEFAULT_DB_URL: &'static str = "http://localhost:8123/";
 const DEFAULT_COMMIT_EVERY: Duration = Duration::from_secs(10); // Same as clickhouse crate
@@ -384,54 +385,59 @@ impl AccountDumper {
 
     pub fn evm_transaction_executed(
         &self,
+        evm_ix: EvmInstruction,
+        evm_ix_data: &[u8],
         first_signature: &Signature,
-        instruction: EvmInstruction,
         pre_accounts: Vec<&PreAccount>,
     ) {
-        match instruction {
-            EvmInstruction::CallFromRawEthereumTX {
-                from_addr,
-                unsigned_msg,
-                sign,
-                ..
+
+        let send = |from, signature, unsigned_msg| {
+            let row = construct_tx_row( from, unsigned_msg, signature, first_signature);
+            //eprintln!("NEON unsigned: {:?} sign: {:?} hash {:?}", unsigned_msg, sign, keccak::hash(&encoded).encode_hex::<String>());
+            log::debug!("evm transaction executed: {:?}", row);
+
+            self.message_tx
+                .try_send(Message::EvmTransactionRow(row))
+                .unwrap_or_else(|_| panic!("try_send failed"))
+
+        };
+
+        match evm_ix {
+            EvmInstruction::CallFromRawEthereumTX => {
+                let from = H160::from(*array_ref![evm_ix_data, 4, 20]);
+                let signature = &evm_ix_data[4 + 20..];
+                let unsigned_msg = &evm_ix_data[4 + 20 + 65..];
+                send(from, signature, unsigned_msg)
             }
-            | EvmInstruction::PartialCallOrContinueFromRawEthereumTX {
-                from_addr,
-                unsigned_msg,
-                sign,
-                ..
-            } => {
-                let row = construct_tx_row(
-                    H160::from_slice(from_addr),
-                    unsigned_msg,
-                    sign,
-                    first_signature,
-                );
-
-                //eprintln!("NEON unsigned: {:?} sign: {:?} hash {:?}", unsigned_msg, sign, keccak::hash(&encoded).encode_hex::<String>());
-                log::debug!("evm transaction executed: {:?}", row);
-
-                self.message_tx
-                    .try_send(Message::EvmTransactionRow(row))
-                    .unwrap_or_else(|_| panic!("try_send failed"))
+            EvmInstruction::PartialCallOrContinueFromRawEthereumTX => {
+                let from = H160::from(*array_ref![evm_ix_data, 4 + 8, 20]);
+                let signature = &evm_ix_data[4 + 8 + 20..];
+                let unsigned_msg = &evm_ix_data[4 + 8 + 20 + 65..];
+                send(from, signature, unsigned_msg)
             }
-            EvmInstruction::ExecuteTrxFromAccountDataIterativeOrContinue { .. }
-            | EvmInstruction::ExecuteTrxFromAccountDataIterativeV02 { .. } => {
-                match extract_evm_tx_data(pre_accounts, first_signature) {
-                    Ok(row) => {
-                        log::debug!("evm transaction executed: {:?}", row);
+            EvmInstruction::ExecuteTrxFromAccountDataIterativeOrContinue |
+            EvmInstruction::ExecuteTrxFromAccountDataIterativeV02  => {
+                if let Some(account) = pre_accounts.get(0) {
+                    let holder_ref = account.data();
+                    let holder = holder_ref.data();
 
-                        self.message_tx
-                            .try_send(Message::EvmTransactionRow(row))
-                            .unwrap_or_else(|_| panic!("try_send failed"))
+                    match get_transaction_from_holder(holder) {
+                        Ok((unsigned_msg, signature)) => {
+                            match verify_tx_signature(signature, unsigned_msg){
+                                Ok(from) => {
+                                    send(from, signature, unsigned_msg)
+                                },
+                                Err(_) =>  log::warn!("verify_tx_signature error")
+                            }
+                        },
+                        Err(_) => log::warn!("parse holder account error")
                     }
-                    Err(err) => log::warn!("error while proccessing eth transaction: {}", err),
+                } else{
+                    log::warn!("error while proccessing eth transaction: holder account not found");
                 }
             }
-            _ => {
-                log::warn!("unhandled neon instruction {:?}", instruction);
-            }
-        }
+            _ =>  log::warn!("unhandled neon instruction {:?}", evm_ix)
+        };
     }
 
     pub fn prune_transaction(&self, prune_slot: Slot) {
@@ -478,27 +484,6 @@ enum ExtractError {
     NoHolder,
     #[error("failure verifying signature: {0}")]
     BadSignature(#[from] Secp256k1RecoverError),
-}
-
-fn extract_evm_tx_data(
-    pre_accounts: Vec<&PreAccount>,
-    signature: &Signature,
-) -> Result<EvmTransactionRow, ExtractError> {
-    if let Some(account) = pre_accounts.get(0) {
-        let holder_ref = account.data();
-        let holder = holder_ref.data();
-        let (unsigned_msg, eth_signature) = get_transaction_from_holder(holder)?;
-        let caller = verify_tx_signature(eth_signature, unsigned_msg)?;
-
-        Ok(construct_tx_row(
-            caller,
-            unsigned_msg,
-            eth_signature,
-            signature,
-        ))
-    } else {
-        Err(ExtractError::NoHolder)
-    }
 }
 
 fn get_transaction_from_holder(data: &[u8]) -> Result<(&[u8], &[u8]), ExtractError> {
