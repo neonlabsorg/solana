@@ -307,6 +307,18 @@ pub mod fixed_memcpy_nonoverlapping_check {
     solana_sdk::declare_id!("36PRUK2Dz6HWYdG9SpjeAsF5F3KxnFCakA2BZMbtMhSb");
 }
 
+pub mod alt_bn128_addition_syscall_enabled {
+    solana_sdk::declare_id!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXALTBN128ADD");
+}
+
+pub mod alt_bn128_multiplication_syscall_enabled {
+    solana_sdk::declare_id!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXALTBN128MUL");
+}
+
+pub mod alt_bn128_pairing_syscall_enabled {
+    solana_sdk::declare_id!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXALTBN128PAiR");
+}
+
 lazy_static! {
     /// Map of feature identifiers to user-visible description
     pub static ref FEATURE_NAMES: HashMap<Pubkey, &'static str> = [
