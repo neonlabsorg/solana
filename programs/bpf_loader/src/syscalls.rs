@@ -165,25 +165,28 @@ pub fn register_syscalls(
         syscall_registry.register_syscall_by_name(b"sol_memset_", SyscallMemset::call)?;
     }
 
+    // TODO: This feature ID is not registered now. So we will enabled it in any case for tests purposes.
     // alt_bn128_addition
-    if invoke_context.is_feature_active(&alt_bn128_addition_syscall_enabled::id()) {
+    //if invoke_context.is_feature_active(&alt_bn128_addition_syscall_enabled::id()) {
         syscall_registry
             .register_syscall_by_name(b"sol_alt_bn128_addition", SyscallAltBn128Addition::call)?;
-    }
+    //}
 
+    // TODO: This feature ID is not registered now. So we will enabled it in any case for tests purposes.
     // alt_bn128_multiplication
-    if invoke_context.is_feature_active(&alt_bn128_multiplication_syscall_enabled::id()) {
+    // if invoke_context.is_feature_active(&alt_bn128_multiplication_syscall_enabled::id()) {
         syscall_registry.register_syscall_by_name(
             b"sol_alt_bn128_multiplication",
             SyscallAltBn128Multiplication::call,
         )?;
-    }
+    //}
 
+    // TODO: This feature ID is not registered now. So we will enabled it in any case for tests purposes.
     // alt_bn128_pairing
-    if invoke_context.is_feature_active(&alt_bn128_pairing_syscall_enabled::id()) {
+    // if invoke_context.is_feature_active(&alt_bn128_pairing_syscall_enabled::id()) {
         syscall_registry
             .register_syscall_by_name(b"sol_alt_bn128_pairing", SyscallAltBn128Pairing::call)?;
-    }
+    // }
 
     // Cross-program invocation syscalls
     syscall_registry
