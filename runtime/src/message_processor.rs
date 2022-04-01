@@ -1428,10 +1428,17 @@ impl MessageProcessor {
             .filter(|dumper| dumper.check_transaction(message))
             .map(|dumper| {
                 // TODO: collect only writables
-                let pre_accounts = accounts
+                let mut pre_accounts = accounts
                     .iter()
                     .map(|(key, data)| PreAccount::new(key, &*data.borrow()))
                     .collect::<Vec<_>>();
+
+                use std::str::FromStr;
+                let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
+                let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent_collector.rent, 17,  &rent_key).unwrap();
+                let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
+                pre_accounts.push(sysvar_rent);
+
                 (dumper, pre_accounts)
             });
 
