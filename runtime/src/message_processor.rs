@@ -1432,13 +1432,6 @@ impl MessageProcessor {
                     .iter()
                     .map(|(key, data)| PreAccount::new(key, &*data.borrow()))
                     .collect::<Vec<_>>();
-
-                use std::str::FromStr;
-                let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
-                let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent_collector.rent, 17,  &rent_key).unwrap();
-                let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
-                pre_accounts.push(sysvar_rent);
-
                 (dumper, pre_accounts)
             });
 
@@ -1512,6 +1505,12 @@ impl MessageProcessor {
                 account_dumper.account_loaded(first_signature, &pre_account);
                 account_dumper.account_changed(first_signature, pubkey, &*account, data_changed);
             }
+
+            use std::str::FromStr;
+            let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
+            let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent_collector.rent, 17,  &rent_key).unwrap();
+            let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
+            account_dumper.account_loaded(first_signature, &sysvar_rent);
         }
 
         Ok(())
