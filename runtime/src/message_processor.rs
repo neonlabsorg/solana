@@ -1504,9 +1504,7 @@ impl MessageProcessor {
                 account_dumper.account_before_trx(first_signature, &pre_account);
                 account_dumper.account_after_trx(first_signature, pubkey, &*account);
             }
-
-            // Dummy implementation of sysvar rent dumping (just save the same data every time)
-            // todo: Dump actual data
+            
             use std::str::FromStr;
             let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
             let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent_collector.rent, 17,  &rent_key).unwrap();
