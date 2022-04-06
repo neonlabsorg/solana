@@ -55,7 +55,7 @@ impl FeeStructure {
 
 impl Default for FeeStructure {
     fn default() -> Self {
-        Self::new(0.000005, 0.0, vec![(1_400_000, 0.0)])
+        Self::new(0.000005, 0.0, vec![(200, 0.0000005), (1400000, 0.000005)])
     }
 }
 
