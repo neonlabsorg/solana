@@ -37,6 +37,7 @@
 use solana_sdk::recent_blockhashes_account;
 use {
     crate::{
+        account_dumper::AccountDumper,
         accounts::{
             AccountAddressFilter, Accounts, LoadedTransaction, TransactionAccounts,
             TransactionLoadResult,
@@ -512,6 +513,7 @@ pub struct BankRc {
     pub(crate) bank_id_generator: Arc<AtomicU64>,
 }
 
+use serde::{Serialize, Serializer};
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
 use solana_frozen_abi::abi_example::AbiExample;
 
@@ -1051,6 +1053,24 @@ impl AbiExample for BuiltinPrograms {
     }
 }
 
+struct DbSignature(Signature);
+
+impl Serialize for DbSignature {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        use serde::ser::SerializeTuple;
+
+        let mut seq = serializer.serialize_tuple(64)?;
+        for e in self.0.as_ref() {
+            seq.serialize_element(e)?;
+        }
+        seq.end()
+    }
+}
+
 /// Manager for the state of all accounts and programs after processing its entries.
 /// AbiExample is needed even without Serialize/Deserialize; actual (de-)serialization
 /// are implemented elsewhere for versioning
@@ -1216,6 +1236,8 @@ pub struct Bank {
 
     /// Transaction fee structure
     pub fee_structure: FeeStructure,
+
+    pub account_dumper: Option<Arc<AccountDumper>>,
 }
 
 impl Default for BlockhashQueue {
@@ -1358,6 +1380,7 @@ impl Bank {
             sysvar_cache: RwLock::<SysvarCache>::default(),
             accounts_data_len: AtomicU64::default(),
             fee_structure: FeeStructure::default(),
+            account_dumper: None,
         };
 
         let total_accounts_stats = bank.get_total_accounts_stats().unwrap();
@@ -1387,6 +1410,7 @@ impl Bank {
             debug_do_not_add_builtins,
             Some(ACCOUNTS_DB_CONFIG_FOR_TESTING),
             None,
+            None,
         )
     }
 
@@ -1411,6 +1435,7 @@ impl Bank {
             debug_do_not_add_builtins,
             Some(ACCOUNTS_DB_CONFIG_FOR_BENCHMARKS),
             None,
+            None,
         )
     }
 
@@ -1426,6 +1451,7 @@ impl Bank {
         debug_do_not_add_builtins: bool,
         accounts_db_config: Option<AccountsDbConfig>,
         accounts_update_notifier: Option<AccountsUpdateNotifier>,
+        account_dumper: Option<Arc<AccountDumper>>,
     ) -> Self {
         let accounts = Accounts::new_with_config(
             paths,
@@ -1440,6 +1466,7 @@ impl Bank {
         bank.ancestors = Ancestors::from(vec![bank.slot()]);
         bank.transaction_debug_keys = debug_keys;
         bank.cluster_type = Some(genesis_config.cluster_type);
+        bank.account_dumper = account_dumper;
 
         bank.process_genesis_config(genesis_config);
         bank.finish_init(
@@ -1679,6 +1706,7 @@ impl Bank {
             sysvar_cache: RwLock::new(SysvarCache::default()),
             accounts_data_len: AtomicU64::new(parent.load_accounts_data_len()),
             fee_structure: parent.fee_structure.clone(),
+            account_dumper: parent.account_dumper.clone(),
         };
 
         let (_, ancestors_time) = Measure::this(
@@ -1904,6 +1932,7 @@ impl Bank {
         additional_builtins: Option<&Builtins>,
         debug_do_not_add_builtins: bool,
         accounts_data_len: u64,
+        account_dumper: Option<Arc<AccountDumper>>,
     ) -> Self {
         fn new<T: Default>() -> T {
             T::default()
@@ -1968,6 +1997,7 @@ impl Bank {
             sysvar_cache: RwLock::new(SysvarCache::default()),
             accounts_data_len: AtomicU64::new(accounts_data_len),
             fee_structure: FeeStructure::default(),
+            account_dumper,
         };
         bank.finish_init(
             genesis_config,
@@ -3515,6 +3545,7 @@ impl Bank {
             MAX_PROCESSING_AGE - MAX_TRANSACTION_FORWARDING_DELAY,
             false,
             true,
+            false,
             &mut timings,
         );
 
@@ -3900,6 +3931,7 @@ impl Bank {
         enable_log_recording: bool,
         timings: &mut ExecuteTimings,
         error_counters: &mut ErrorCounters,
+        enable_tx_dumping : bool,
     ) -> TransactionExecutionResult {
         let mut get_executors_time = Measure::start("get_executors_time");
         let executors = self.get_executors(&loaded_transaction.accounts);
@@ -3924,6 +3956,11 @@ impl Bank {
         let (blockhash, lamports_per_signature) = self.last_blockhash_and_lamports_per_signature();
 
         let mut process_message_time = Measure::start("process_message_time");
+
+        let account_dumper = enable_tx_dumping
+            .then(|| self.account_dumper.as_ref())
+            .flatten();
+
         let process_result = MessageProcessor::process_message(
             &self.builtin_programs.vec,
             tx.message(),
@@ -3940,6 +3977,9 @@ impl Bank {
             blockhash,
             lamports_per_signature,
             self.load_accounts_data_len(),
+            &tx.signatures[0],
+            account_dumper,
+            self.slot,
         );
         process_message_time.stop();
         saturating_add_assign!(
@@ -4016,6 +4056,7 @@ impl Bank {
         max_age: usize,
         enable_cpi_recording: bool,
         enable_log_recording: bool,
+        enable_tx_dumping: bool,
         timings: &mut ExecuteTimings,
     ) -> LoadAndExecuteTransactionsOutput {
         let sanitized_txs = batch.sanitized_transactions();
@@ -4115,6 +4156,7 @@ impl Bank {
                         enable_log_recording,
                         timings,
                         &mut error_counters,
+                        enable_tx_dumping,
                     )
                 }
             })
@@ -5172,6 +5214,7 @@ impl Bank {
             max_age,
             enable_cpi_recording,
             enable_log_recording,
+            true,
             timings,
         );
 

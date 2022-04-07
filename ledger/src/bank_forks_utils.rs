@@ -10,6 +10,7 @@ use {
     log::*,
     solana_entry::entry::VerifyRecyclers,
     solana_runtime::{
+        account_dumper::Config as AccountDumperConfig,
         accounts_update_notifier_interface::AccountsUpdateNotifier,
         bank_forks::BankForks,
         snapshot_archive_info::SnapshotArchiveInfoGetter,
@@ -59,6 +60,7 @@ pub fn load(
     account_paths: Vec<PathBuf>,
     shrink_paths: Option<Vec<PathBuf>>,
     snapshot_config: Option<&SnapshotConfig>,
+    account_dumper_config: Option<AccountDumperConfig>,
     process_options: ProcessOptions,
     transaction_status_sender: Option<&TransactionStatusSender>,
     cache_block_meta_sender: Option<&CacheBlockMetaSender>,
@@ -90,6 +92,7 @@ pub fn load(
                 cache_block_meta_sender,
                 accounts_package_sender,
                 accounts_update_notifier,
+                account_dumper_config,
             );
         } else {
             info!("No snapshot package available; will load from genesis");
@@ -117,6 +120,7 @@ pub fn load(
         snapshot_config,
         accounts_package_sender,
         accounts_update_notifier,
+        account_dumper_config,
     )
 }
 
@@ -129,6 +133,7 @@ fn load_from_genesis(
     snapshot_config: Option<&SnapshotConfig>,
     accounts_package_sender: AccountsPackageSender,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> LoadResult {
     info!("Processing ledger from genesis");
     to_loadresult(
@@ -141,6 +146,7 @@ fn load_from_genesis(
             snapshot_config,
             accounts_package_sender,
             accounts_update_notifier,
+            account_dumper_config,
         ),
         None,
     )
@@ -158,6 +164,7 @@ fn load_from_snapshot(
     cache_block_meta_sender: Option<&CacheBlockMetaSender>,
     accounts_package_sender: AccountsPackageSender,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> LoadResult {
     // Fail hard here if snapshot fails to load, don't silently continue
     if account_paths.is_empty() {
@@ -182,6 +189,7 @@ fn load_from_snapshot(
             process_options.verify_index,
             process_options.accounts_db_config.clone(),
             accounts_update_notifier,
+            account_dumper_config,
         )
         .expect("Load from snapshot failed");
 

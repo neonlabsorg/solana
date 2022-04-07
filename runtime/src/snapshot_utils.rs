@@ -1,5 +1,6 @@
 use {
     crate::{
+        account_dumper::Config as AccountDumperConfig,
         accounts_db::{
             AccountShrinkThreshold, AccountsDbConfig, SnapshotStorage, SnapshotStorages,
         },
@@ -736,6 +737,7 @@ pub fn bank_from_snapshot_archives(
     verify_index: bool,
     accounts_db_config: Option<AccountsDbConfig>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> Result<(Bank, BankFromArchiveTimings)> {
     check_are_snapshots_compatible(
         full_snapshot_archive_info,
@@ -800,6 +802,7 @@ pub fn bank_from_snapshot_archives(
         verify_index,
         accounts_db_config,
         accounts_update_notifier,
+        account_dumper_config,
     )?;
     measure_rebuild.stop();
     info!("{}", measure_rebuild);
@@ -846,6 +849,7 @@ pub fn bank_from_latest_snapshot_archives(
     verify_index: bool,
     accounts_db_config: Option<AccountsDbConfig>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> Result<(
     Bank,
     BankFromArchiveTimings,
@@ -889,6 +893,7 @@ pub fn bank_from_latest_snapshot_archives(
         verify_index,
         accounts_db_config,
         accounts_update_notifier,
+        account_dumper_config,
     )?;
 
     verify_bank_against_expected_slot_hash(
@@ -1443,6 +1448,7 @@ fn rebuild_bank_from_snapshots(
     verify_index: bool,
     accounts_db_config: Option<AccountsDbConfig>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> Result<Bank> {
     let (full_snapshot_version, full_snapshot_root_paths) =
         verify_unpacked_snapshots_dir_and_version(
@@ -1491,6 +1497,7 @@ fn rebuild_bank_from_snapshots(
                     verify_index,
                     accounts_db_config,
                     accounts_update_notifier,
+                    account_dumper_config,
                 ),
             }?,
         )

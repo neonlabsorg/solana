@@ -1,5 +1,6 @@
 use {
     crate::{
+        account_dumper::{AccountDumper, Config as AccountDumperConfig},
         accounts::Accounts,
         accounts_db::{
             AccountShrinkThreshold, AccountStorageEntry, AccountsDb, AccountsDbConfig, AppendVecId,
@@ -193,6 +194,7 @@ pub(crate) fn bank_from_streams<R>(
     verify_index: bool,
     accounts_db_config: Option<AccountsDbConfig>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> std::result::Result<Bank, Error>
 where
     R: Read,
@@ -231,6 +233,7 @@ where
                 verify_index,
                 accounts_db_config,
                 accounts_update_notifier,
+                account_dumper_config,
             )?;
             Ok(bank)
         }};
@@ -324,6 +327,7 @@ fn reconstruct_bank_from_fields<E>(
     verify_index: bool,
     accounts_db_config: Option<AccountsDbConfig>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> Result<Bank, Error>
 where
     E: SerializableStorage + std::marker::Sync,
@@ -343,6 +347,7 @@ where
     )?;
 
     let bank_rc = BankRc::new(Accounts::new_empty(accounts_db), bank_fields.slot);
+    let account_dumper = account_dumper_config.map(|config| Arc::new(AccountDumper::new(config)));
 
     // if limit_load_slot_count_from_snapshot is set, then we need to side-step some correctness checks beneath this call
     let debug_do_not_add_builtins = limit_load_slot_count_from_snapshot.is_some();
@@ -354,6 +359,7 @@ where
         additional_builtins,
         debug_do_not_add_builtins,
         reconstructed_accounts_db_info.accounts_data_len,
+        account_dumper,
     );
 
     info!("rent_collector: {:?}", bank.rent_collector());

@@ -64,6 +64,7 @@ use {
         transaction_status_service::TransactionStatusService,
     },
     solana_runtime::{
+        account_dumper::Config as AccountDumperConfig,
         accounts_db::{AccountShrinkThreshold, AccountsDbConfig},
         accounts_index::AccountSecondaryIndexes,
         accounts_update_notifier_interface::AccountsUpdateNotifier,
@@ -165,6 +166,7 @@ pub struct ValidatorConfig {
     pub no_wait_for_vote_to_start_leader: bool,
     pub accounts_shrink_ratio: AccountShrinkThreshold,
     pub wait_to_vote_slot: Option<Slot>,
+    pub account_dumper_config: Option<AccountDumperConfig>,
 }
 
 impl Default for ValidatorConfig {
@@ -225,6 +227,7 @@ impl Default for ValidatorConfig {
             accounts_shrink_ratio: AccountShrinkThreshold::default(),
             accounts_db_config: None,
             wait_to_vote_slot: None,
+            account_dumper_config: None,
         }
     }
 }
@@ -1340,6 +1343,7 @@ fn new_banks_from_ledger(
         config.account_paths.clone(),
         config.account_shrink_paths.clone(),
         config.snapshot_config.as_ref(),
+        config.account_dumper_config.clone(),
         process_options,
         transaction_history_services
             .transaction_status_sender

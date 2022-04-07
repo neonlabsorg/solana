@@ -17,6 +17,7 @@ use {
     solana_program_runtime::timings::ExecuteTimings,
     solana_rayon_threadlimit::get_thread_count,
     solana_runtime::{
+        account_dumper::{AccountDumper, Config as AccountDumperConfig},
         accounts_db::{AccountShrinkThreshold, AccountsDbConfig},
         accounts_index::AccountSecondaryIndexes,
         accounts_update_notifier_interface::AccountsUpdateNotifier,
@@ -575,6 +576,7 @@ pub fn process_blockstore(
     snapshot_config: Option<&SnapshotConfig>,
     accounts_package_sender: AccountsPackageSender,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> BlockstoreProcessorResult {
     if let Some(num_threads) = opts.override_num_threads {
         PAR_THREAD_POOL.with(|pool| {
@@ -584,6 +586,8 @@ pub fn process_blockstore(
                 .unwrap()
         });
     }
+
+    let account_dumper = account_dumper_config.map(|config| Arc::new(AccountDumper::new(config)));
 
     // Setup bank for slot 0
     let bank0 = Bank::new_with_paths(
@@ -597,6 +601,7 @@ pub fn process_blockstore(
         false,
         opts.accounts_db_config.clone(),
         accounts_update_notifier,
+        account_dumper,
     );
     let bank0 = Arc::new(bank0);
     info!("processing ledger for slot 0...");
@@ -1666,6 +1671,7 @@ pub mod tests {
             None,
             None,
             accounts_package_sender,
+            None,
             None,
         )
         .unwrap()
