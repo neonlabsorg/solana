@@ -174,6 +174,10 @@ impl PreAccount {
         Ref::map(self.account.borrow(), |account| account.data())
     }
 
+    pub fn account<'a>(&'a self) -> impl std::ops::Deref<Target = AccountSharedData> + 'a {
+        self.account.borrow()
+    }
+
     pub fn lamports(&self) -> u64 {
         self.account.borrow().lamports()
     }

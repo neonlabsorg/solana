@@ -1,4 +1,8 @@
+use crate::account_dumper::AccountDumper;
+use solana_program_runtime::{pre_account::PreAccount};
+use evm_loader::instruction::EvmInstruction;
 use {
+    log::*,
     serde::{Deserialize, Serialize},
     solana_measure::measure::Measure,
     solana_program_runtime::{
@@ -13,15 +17,17 @@ use {
         timings::ExecuteTimings,
     },
     solana_sdk::{
-        account::WritableAccount,
+        account::{AccountSharedData, WritableAccount},
         feature_set::{prevent_calling_precompiles_as_programs, FeatureSet},
         hash::Hash,
-        message::SanitizedMessage,
+        message::{SanitizedMessage, legacy},
         precompiles::is_precompile,
         rent::Rent,
         saturating_add_assign,
         sysvar::instructions,
         transaction::TransactionError,
+        signature::Signature,
+        pubkey::Pubkey,
     },
     std::{borrow::Cow, cell::RefCell, rc::Rc, sync::Arc},
 };
@@ -71,7 +77,25 @@ impl MessageProcessor {
         blockhash: Hash,
         lamports_per_signature: u64,
         current_accounts_data_len: u64,
+        first_signature: &Signature,
+        account_dumper: Option<&Arc<AccountDumper>>,
+        slot: u64,
     ) -> Result<ProcessedMessageInfo, TransactionError> {
+
+        let dump_job = account_dumper
+            .filter(|dumper| dumper.check_transaction(message))
+            .map(|dumper| {
+                // TODO: collect only writables
+                let mut pre_accounts = accounts
+                    .iter()
+                    .map(|(key, data)| PreAccount::new(key, &*data.borrow()))
+                    .collect::<Vec<_>>();
+                (dumper, pre_accounts)
+            });
+        let logs = log_collector
+            .as_ref()
+            .map_or_else(Vec::new, |c| c.borrow().get_recorded_content().to_vec());
+
         let mut invoke_context = InvokeContext::new(
             rent,
             accounts,
@@ -151,6 +175,69 @@ impl MessageProcessor {
             })?;
         }
         instruction_trace.append(invoke_context.get_instruction_trace_mut());
+
+        if let Some((account_dumper, pre_accounts)) = dump_job {
+
+            let legacy = match message{
+                SanitizedMessage::Legacy(legacy) => legacy.clone(),
+                SanitizedMessage::V0(loaded) => {
+                    legacy::Message{
+                        header: loaded.message.header.clone(),
+                        account_keys: loaded.message.account_keys.clone(),
+                        recent_blockhash: loaded.message.recent_blockhash,
+                        instructions: loaded.message.instructions.clone()
+                    }
+                }
+            };
+
+
+            account_dumper.transaction_executed(slot, first_signature, &legacy, logs);
+
+            let neon_ixs = legacy.instructions.iter().filter(|&ix| {
+                *ix.program_id(&legacy.account_keys) == crate::neon_evm_program::id()
+            });
+            for neon_ix in neon_ixs {
+                // We rely on the fact that the ix account order is preserved during `visit_each_account`.
+                let mut sorted_pre_accounts = Vec::new();
+                let mut work = |_unique_idx, idx| {
+                    let pre_account: &PreAccount = &pre_accounts[idx];
+                    sorted_pre_accounts.push(pre_account);
+
+                    Ok(())
+                };
+                let _ = neon_ix.visit_each_account(&mut work);
+
+                let (tag, evm_ix_data) = neon_ix.data.split_first().unwrap();
+
+                match EvmInstruction::parse(tag) {
+                    Ok(evm_ix) => account_dumper.evm_transaction_executed(
+                        evm_ix,
+                        evm_ix_data,
+                        first_signature,
+                        sorted_pre_accounts,
+                    ),
+                    Err(err) => {
+                        error!("failed to parse evm instruction {:?}", err);
+                    }
+                }
+            }
+
+            for (pre_account, (pubkey, account)) in pre_accounts.into_iter().zip(accounts) {
+                assert_eq!(pre_account.key(), pubkey);
+                let account = account.borrow();
+                account_dumper.account_before_trx(first_signature, &pre_account);
+                account_dumper.account_after_trx(first_signature, pubkey, &*account);
+            }
+
+            use std::str::FromStr;
+            let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
+            let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent, 17,  &rent_key).unwrap();
+            let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
+            account_dumper.account_before_trx(first_signature, &sysvar_rent);
+            account_dumper.account_after_trx(first_signature, &solana_sdk::sysvar::rent::id(), &rent_shared);
+        }
+
+
         Ok(ProcessedMessageInfo {
             accounts_data_len_delta: invoke_context.get_accounts_data_meter().delta(),
         })

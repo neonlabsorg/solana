@@ -3977,7 +3977,7 @@ impl Bank {
             blockhash,
             lamports_per_signature,
             self.load_accounts_data_len(),
-            &tx.signatures[0],
+            &tx.signature(),
             account_dumper,
             self.slot,
         );

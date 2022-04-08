@@ -134,6 +134,7 @@ fn initialize_from_snapshot(
         process_options.verify_index,
         process_options.accounts_db_config,
         None,
+        None,  //TODO: check it
     )
     .unwrap();
 

@@ -1,5 +1,5 @@
 use crate::evm_instruction::{verify_tx_signature, SignedTransaction, UnsignedTransaction};
-use crate::message_processor::PreAccount;
+use solana_program_runtime::pre_account::PreAccount;
 use evm::H160;
 use solana_sdk::account::ReadableAccount;
 use solana_sdk::clock::Slot;
@@ -7,6 +7,7 @@ use solana_sdk::secp256k1_recover::Secp256k1RecoverError;
 use solana_sdk::{
     account::AccountSharedData, keccak, message::Message as SolanaMessage, pubkey::Pubkey,
     signature::Signature,
+    message::{SanitizedMessage, legacy}
 };
 
 use backoff::{backoff::Backoff, ExponentialBackoff};
@@ -299,12 +300,23 @@ impl AccountDumper {
         Ok(())
     }
 
-    pub fn check_transaction(&self, message: &SolanaMessage) -> bool {
-        message
-            .instructions
-            .iter()
-            .filter_map(|ix| message.account_keys.get(usize::from(ix.program_id_index)))
-            .any(|program_id| self.program_ids.contains(program_id))
+    pub fn check_transaction(&self, message: &SanitizedMessage) -> bool {
+        match message {
+            SanitizedMessage::Legacy(legasy) => {
+                legasy
+                    .instructions
+                    .iter()
+                    .filter_map(|ix| legasy.account_keys.get(usize::from(ix.program_id_index)))
+                    .any(|program_id| self.program_ids.contains(program_id))
+            },
+            SanitizedMessage::V0(loaded) => {
+                loaded.message
+                    .instructions
+                    .iter()
+                    .filter_map(|ix| loaded.account_keys.get(usize::from(ix.program_id_index)))
+                    .any(|program_id| self.program_ids.contains(program_id))
+            }
+        }
     }
 
     pub fn account_before_trx(&self, first_signature: &Signature, account: &PreAccount) {
@@ -313,10 +325,10 @@ impl AccountDumper {
             transaction_signature: DbSignature(*first_signature),
             public_key: account.key().to_bytes(),
             lamports: account.lamports(),
-            data: account.data().data().to_vec(),
-            owner: account.data().owner().to_bytes(),
+            data: account.data().to_vec(),
+            owner: account.account().owner().to_bytes(),
             executable: account.executable(),
-            rent_epoch: account.data().rent_epoch(),
+            rent_epoch: account.account().rent_epoch(),
         };
 
         log::debug!("account loaded: {:?}", row);
@@ -358,7 +370,7 @@ impl AccountDumper {
         &self,
         slot: u64,
         first_signature: &Signature,
-        message: &SolanaMessage,
+        message: &legacy::Message,
         logs: Vec<String>,
     ) {
         let row = TransactionRow {
@@ -410,8 +422,8 @@ impl AccountDumper {
             }
             EvmInstruction::ExecuteTrxFromAccountDataIterativeOrContinue |
             EvmInstruction::ExecuteTrxFromAccountDataIterativeV02  => {
-                if let Some(account) = pre_accounts.get(0) {
-                    let holder_ref = account.data();
+                if let Some(pre_acc) = pre_accounts.get(0) {
+                    let holder_ref = pre_acc.account();
                     let holder = holder_ref.data();
 
                     match get_transaction_from_holder(holder) {
