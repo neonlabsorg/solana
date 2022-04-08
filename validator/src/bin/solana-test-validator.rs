@@ -23,6 +23,9 @@ use {
         signature::{read_keypair_file, write_keypair_file, Keypair, Signer},
         system_program,
     },
+    solana_runtime::{
+        account_dumper::Config as AccountDumperConfig,
+    },
     solana_streamer::socket::SocketAddrSpace,
     solana_test_validator::*,
     solana_validator::{
@@ -692,7 +695,14 @@ fn main() {
         );
     }
 
-    match genesis.start_with_mint_address(mint_address, socket_addr_space) {
+    let account_dumper_config = if matches.is_present("enable_account_dumper") {
+        let config = AccountDumperConfig::from_matches(&matches).unwrap_or_else(|e| e.exit());
+        Some(config)
+    } else {
+        None
+    };
+
+    match genesis.start_with_mint_address(mint_address, socket_addr_space, account_dumper_config) {
         Ok(test_validator) => {
             *admin_service_post_init.write().unwrap() =
                 Some(admin_rpc_service::AdminRpcRequestMetadataPostInit {
