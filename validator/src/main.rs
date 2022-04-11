@@ -54,6 +54,7 @@ use {
             DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
             DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         },
+        account_dumper::{self, Config as AccountDumperConfig},
     },
     solana_sdk::{
         clock::{Slot, DEFAULT_S_PER_SLOT},
@@ -1642,6 +1643,55 @@ pub fn main() {
                 .help("Allow contacting private ip addresses")
                 .hidden(true),
         )
+        .arg(
+            Arg::with_name("enable_account_dumper")
+                .long("enable-account-dumper")
+                .requires("dumper_program_ids")
+                .help("Enables dumping accounts and transaction into database")
+        )
+        .arg(
+            Arg::with_name("dumper_after_transaction")
+                .long("dumper-after-transaction")
+                .requires("enable_account_dumper")
+                .help("Enables dumping accounts after transaction")
+        )
+        .arg(
+            Arg::with_name("dumper_program_ids")
+                .long("dumper-program-ids")
+                .takes_value(true)
+                .multiple(true)
+                .number_of_values(1)
+                .requires("enable_account_dumper")
+                .help("Ids of programs to dump")
+        )
+        .arg(
+            Arg::with_name("dumper_db_url")
+                .long("dumper-db-url")
+                .takes_value(true)
+                .requires("enable_account_dumper")
+                .help("Url of the database to dump accounts into")
+        )
+        .arg(
+            Arg::with_name("dumper_db_database")
+                .long("dumper-db-database")
+                .takes_value(true)
+                .requires("enable_account_dumper")
+                .help("Name of the database to dump accounts into")
+        )
+        .arg(
+            Arg::with_name("dumper_db_user")
+                .long("dumper-db-user")
+                .takes_value(true)
+                .requires("enable_account_dumper")
+                .help("User of the account dumper database")
+        )
+        .arg(
+            Arg::with_name("dumper_db_password")
+                .long("dumper-db-password")
+                .requires("enable_account_dumper")
+                .takes_value(true)
+                .help("Password of the account dumper database user")
+        )
         .after_help("The default subcommand is run")
         .subcommand(
             SubCommand::with_name("exit")
@@ -2233,6 +2283,13 @@ pub fn main() {
         warn!("--minimal-rpc-api is now the default behavior. This flag is deprecated and can be removed from the launch args")
     }
 
+    let account_dumper_config = if matches.is_present("enable_account_dumper") {
+        let config = AccountDumperConfig::from_matches(&matches).unwrap_or_else(|e|  e.exit());
+        Some(config)
+    } else {
+        None
+    };
+
     let mut validator_config = ValidatorConfig {
         require_tower: matches.is_present("require_tower"),
         tower_storage,
@@ -2353,6 +2410,7 @@ pub fn main() {
         tpu_coalesce_ms,
         no_wait_for_vote_to_start_leader: matches.is_present("no_wait_for_vote_to_start_leader"),
         accounts_shrink_ratio,
+        account_dumper_config,
         ..ValidatorConfig::default()
     };
 

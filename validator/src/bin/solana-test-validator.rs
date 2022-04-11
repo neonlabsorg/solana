@@ -336,6 +336,55 @@ fn main() {
                 .multiple(true)
                 .help("deactivate this feature in genesis.")
         )
+        .arg(
+            Arg::with_name("enable_account_dumper")
+                .long("enable-account-dumper")
+                .requires("dumper_program_ids")
+                .help("Enables dumping accounts and transaction into database")
+        )
+        .arg(
+            Arg::with_name("dumper_after_transaction")
+                .long("dumper-after-transaction")
+                .requires("enable_account_dumper")
+                .help("Enables dumping accounts after transaction")
+        )
+        .arg(
+            Arg::with_name("dumper_program_ids")
+                .long("dumper-program-ids")
+                .takes_value(true)
+                .multiple(true)
+                .number_of_values(1)
+                .requires("enable_account_dumper")
+                .help("Ids of programs to dump")
+        )
+        .arg(
+            Arg::with_name("dumper_db_url")
+                .long("dumper-db-url")
+                .takes_value(true)
+                .requires("enable_account_dumper")
+                .help("Url of the database to dump accounts into")
+        )
+        .arg(
+            Arg::with_name("dumper_db_database")
+                .long("dumper-db-database")
+                .takes_value(true)
+                .requires("enable_account_dumper")
+                .help("Name of the database to dump accounts into")
+        )
+        .arg(
+            Arg::with_name("dumper_db_user")
+                .long("dumper-db-user")
+                .takes_value(true)
+                .requires("enable_account_dumper")
+                .help("User of the account dumper database")
+        )
+        .arg(
+            Arg::with_name("dumper_db_password")
+                .long("dumper-db-password")
+                .requires("enable_account_dumper")
+                .takes_value(true)
+                .help("Password of the account dumper database user")
+        )
         .get_matches();
 
     let output = if matches.is_present("quiet") {

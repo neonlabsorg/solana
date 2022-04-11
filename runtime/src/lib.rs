@@ -29,6 +29,7 @@ pub mod cost_model;
 pub mod cost_tracker;
 pub mod epoch_stakes;
 pub mod execute_cost_table;
+pub mod evm_instruction;
 pub mod genesis_utils;
 pub mod hardened_unpack;
 pub mod in_mem_accounts_index;
@@ -64,7 +65,6 @@ pub mod vote_account;
 pub mod vote_parser;
 pub mod vote_sender_types;
 pub mod waitable_condvar;
-pub mod evm_instruction;
 
 #[macro_use]
 extern crate solana_metrics;

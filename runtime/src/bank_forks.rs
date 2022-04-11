@@ -2,6 +2,7 @@
 
 use {
     crate::{
+        account_dumper::AccountDumper,
         accounts_background_service::{AbsRequestSender, SnapshotRequest},
         bank::Bank,
         snapshot_config::SnapshotConfig,
@@ -41,6 +42,8 @@ pub struct BankForks {
 
     pub accounts_hash_interval_slots: Slot,
     last_accounts_hash_slot: Slot,
+
+    account_dumper: Option<Arc<AccountDumper>>,
 }
 
 impl Index<u64> for BankForks {
@@ -138,6 +141,9 @@ impl BankForks {
                 descendants.entry(parent).or_default().insert(*slot);
             }
         }
+
+        let account_dumper = initial_forks.first().and_then(|b| b.account_dumper.clone());
+
         Self {
             root,
             banks,
@@ -145,6 +151,7 @@ impl BankForks {
             snapshot_config: None,
             accounts_hash_interval_slots: std::u64::MAX,
             last_accounts_hash_slot: root,
+            account_dumper,
         }
     }
 
@@ -464,6 +471,13 @@ impl BankForks {
             })
             .collect();
         prune_slots_time.stop();
+
+        if let Some(account_dumper) = self.account_dumper.as_ref() {
+            prune_slots
+                .iter()
+                .filter(|&&s| s > highest_confirmed_root)
+                .for_each(|&s| account_dumper.prune_transaction(s));
+        }
 
         let mut prune_remove_time = Measure::start("prune_slots");
         let removed_banks = prune_slots
