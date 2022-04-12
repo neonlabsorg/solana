@@ -1,5 +1,6 @@
 #![cfg_attr(RUSTC_WITH_SPECIALIZATION, feature(min_specialization))]
 #![allow(clippy::integer_arithmetic)]
+pub mod account_dumper;
 pub mod accounts;
 pub mod accounts_background_service;
 pub mod accounts_cache;
@@ -23,6 +24,7 @@ pub mod cost_model;
 pub mod cost_tracker;
 pub mod epoch_stakes;
 pub mod execute_cost_table;
+pub mod evm_instruction;
 pub mod genesis_utils;
 pub mod hardened_unpack;
 pub mod hashed_transaction;

@@ -11,6 +11,7 @@ use {
     solana_rpc::rpc::JsonRpcConfig,
     solana_runtime::{
         bank_forks::{ArchiveFormat, SnapshotConfig, SnapshotVersion},
+        account_dumper::Config as AccountDumperConfig,
         genesis_utils::create_genesis_config_with_leader_ex,
         hardened_unpack::MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         snapshot_utils::DEFAULT_MAX_SNAPSHOTS_TO_RETAIN,
@@ -270,8 +271,9 @@ impl TestValidatorGenesis {
         &self,
         mint_address: Pubkey,
         socket_addr_space: SocketAddrSpace,
+        account_dumper_config: Option<AccountDumperConfig>,
     ) -> Result<TestValidator, Box<dyn std::error::Error>> {
-        TestValidator::start(mint_address, self, socket_addr_space)
+        TestValidator::start(mint_address, self, socket_addr_space, account_dumper_config)
     }
 
     /// Start a test validator
@@ -281,7 +283,7 @@ impl TestValidatorGenesis {
     ///
     /// This function panics on initialization failure.
     pub fn start(&self) -> (TestValidator, Keypair) {
-        self.start_with_socket_addr_space(SocketAddrSpace::new(/*allow_private_addr=*/ true))
+        self.start_with_socket_addr_space(SocketAddrSpace::new(/*allow_private_addr=*/ true), None)
     }
 
     /// Start a test validator with the given `SocketAddrSpace`
@@ -293,11 +295,17 @@ impl TestValidatorGenesis {
     pub fn start_with_socket_addr_space(
         &self,
         socket_addr_space: SocketAddrSpace,
+        account_dumper_config: Option<AccountDumperConfig>,
     ) -> (TestValidator, Keypair) {
         let mint_keypair = Keypair::new();
-        TestValidator::start(mint_keypair.pubkey(), self, socket_addr_space)
-            .map(|test_validator| (test_validator, mint_keypair))
-            .expect("Test validator failed to start")
+        TestValidator::start(
+            mint_keypair.pubkey(),
+            self,
+            socket_addr_space,
+            account_dumper_config,
+        )
+        .map(|test_validator| (test_validator, mint_keypair))
+        .expect("Test validator failed to start")
     }
 }
 
@@ -321,6 +329,7 @@ impl TestValidator {
         mint_address: Pubkey,
         faucet_addr: Option<SocketAddr>,
         socket_addr_space: SocketAddrSpace,
+        account_dumper_config: Option<AccountDumperConfig>,
     ) -> Self {
         TestValidatorGenesis::default()
             .fee_rate_governor(FeeRateGovernor::new(0, 0))
@@ -330,7 +339,7 @@ impl TestValidator {
                 ..Rent::default()
             })
             .faucet_addr(faucet_addr)
-            .start_with_mint_address(mint_address, socket_addr_space)
+            .start_with_mint_address(mint_address, socket_addr_space, account_dumper_config)
             .expect("validator start failed")
     }
 
@@ -343,6 +352,7 @@ impl TestValidator {
         target_lamports_per_signature: u64,
         faucet_addr: Option<SocketAddr>,
         socket_addr_space: SocketAddrSpace,
+        account_dumper_config: Option<AccountDumperConfig>,
     ) -> Self {
         TestValidatorGenesis::default()
             .fee_rate_governor(FeeRateGovernor::new(target_lamports_per_signature, 0))
@@ -352,7 +362,7 @@ impl TestValidator {
                 ..Rent::default()
             })
             .faucet_addr(faucet_addr)
-            .start_with_mint_address(mint_address, socket_addr_space)
+            .start_with_mint_address(mint_address, socket_addr_space, account_dumper_config)
             .expect("validator start failed")
     }
 
@@ -458,6 +468,7 @@ impl TestValidator {
         mint_address: Pubkey,
         config: &TestValidatorGenesis,
         socket_addr_space: SocketAddrSpace,
+        account_dumper_config: Option<AccountDumperConfig>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let preserve_ledger = config.ledger_path.is_some();
         let ledger_path = TestValidator::initialize_ledger(mint_address, config)?;
@@ -529,6 +540,7 @@ impl TestValidator {
             rocksdb_compaction_interval: Some(100), // Compact every 100 slots
             max_ledger_shreds: config.max_ledger_shreds,
             no_wait_for_vote_to_start_leader: true,
+            account_dumper_config,
             ..ValidatorConfig::default()
         };
 

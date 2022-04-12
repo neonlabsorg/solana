@@ -11,6 +11,7 @@ use {
     solana_client::rpc_client::RpcClient,
     solana_faucet::faucet::{run_local_faucet_with_port, FAUCET_PORT},
     solana_rpc::rpc::JsonRpcConfig,
+    solana_runtime::account_dumper::Config as AccountDumperConfig,
     solana_sdk::{
         account::AccountSharedData,
         clock::Slot,
@@ -280,6 +281,55 @@ fn main() {
                     "Give the faucet address this much SOL in genesis. \
                      If the ledger already exists then this parameter is silently ignored",
                 ),
+        )
+        .arg(
+            Arg::with_name("enable_account_dumper")
+                .long("enable-account-dumper")
+                .requires("dumper_program_ids")
+                .help("Enables dumping accounts and transaction into database")
+        )
+        .arg(
+            Arg::with_name("dumper_after_transaction")
+                .long("dumper-after-transaction")
+                .requires("enable_account_dumper")
+                .help("Enables dumping accounts after transaction")
+        )
+        .arg(
+            Arg::with_name("dumper_program_ids")
+                .long("dumper-program-ids")
+                .takes_value(true)
+                .multiple(true)
+                .number_of_values(1)
+                .requires("enable_account_dumper")
+                .help("Ids of programs to dump")
+        )
+        .arg(
+            Arg::with_name("dumper_db_url")
+                .long("dumper-db-url")
+                .takes_value(true)
+                .requires("enable_account_dumper")
+                .help("Url of the database to dump accounts into")
+        )
+        .arg(
+            Arg::with_name("dumper_db_database")
+                .long("dumper-db-database")
+                .takes_value(true)
+                .requires("enable_account_dumper")
+                .help("Name of the database to dump accounts into")
+        )
+        .arg(
+            Arg::with_name("dumper_db_user")
+                .long("dumper-db-user")
+                .takes_value(true)
+                .requires("enable_account_dumper")
+                .help("User of the account dumper database")
+        )
+        .arg(
+            Arg::with_name("dumper_db_password")
+                .long("dumper-db-password")
+                .requires("enable_account_dumper")
+                .takes_value(true)
+                .help("Password of the account dumper database user")
         )
         .get_matches();
 
@@ -591,7 +641,14 @@ fn main() {
         genesis.bind_ip_addr(bind_address);
     }
 
-    match genesis.start_with_mint_address(mint_address, socket_addr_space) {
+    let account_dumper_config = if matches.is_present("enable_account_dumper") {
+        let config = AccountDumperConfig::from_matches(&matches).unwrap_or_else(|e| e.exit());
+        Some(config)
+    } else {
+        None
+    };
+
+    match genesis.start_with_mint_address(mint_address, socket_addr_space, account_dumper_config) {
         Ok(test_validator) => {
             *admin_service_cluster_info.write().unwrap() = Some(test_validator.cluster_info());
             if let Some(dashboard) = dashboard {

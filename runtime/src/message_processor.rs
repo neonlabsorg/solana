@@ -1,9 +1,11 @@
 use {
     crate::{
-        accounts::Accounts, ancestors::Ancestors, bank::TransactionAccountRefCell,
-        instruction_recorder::InstructionRecorder, log_collector::LogCollector,
-        native_loader::NativeLoader, rent_collector::RentCollector,
+        account_dumper::AccountDumper, accounts::Accounts, ancestors::Ancestors,
+        bank::TransactionAccountRefCell, instruction_recorder::InstructionRecorder,
+        log_collector::LogCollector, native_loader::NativeLoader, rent_collector::RentCollector,
     },
+    //use solana_program_runtime::{ExecuteDetailsTimings, Executors, InstructionProcessor, PreAccount};
+    evm_loader::instruction::EvmInstruction,
     log::*,
     serde::{Deserialize, Serialize},
     solana_measure::measure::Measure,
@@ -27,6 +29,7 @@ use {
         },
         pubkey::Pubkey,
         rent::Rent,
+        signature::Signature,
         system_program,
         sysvar::instructions,
         transaction::TransactionError,
@@ -202,6 +205,10 @@ impl PreAccount {
             account: Rc::new(RefCell::new(account.clone())),
             changed: false,
         }
+    }
+
+    pub fn data<'a>(&'a self) -> impl std::ops::Deref<Target = AccountSharedData> + 'a {
+        self.account.borrow()
     }
 
     pub fn verify(
@@ -1413,7 +1420,21 @@ impl MessageProcessor {
         timings: &mut ExecuteDetailsTimings,
         account_db: Arc<Accounts>,
         ancestors: &Ancestors,
+        first_signature: &Signature,
+        account_dumper: Option<&Arc<AccountDumper>>,
+        slot: u64,
     ) -> Result<(), TransactionError> {
+        let dump_job = account_dumper
+            .filter(|dumper| dumper.check_transaction(message))
+            .map(|dumper| {
+                // TODO: collect only writables
+                let pre_accounts = accounts
+                    .iter()
+                    .map(|(key, data)| PreAccount::new(key, &*data.borrow()))
+                    .collect::<Vec<_>>();
+                (dumper, pre_accounts)
+            });
+
         for (instruction_index, instruction) in message.instructions.iter().enumerate() {
             let instruction_recorder = instruction_recorders
                 .as_ref()
@@ -1440,6 +1461,49 @@ impl MessageProcessor {
 
             err?;
         }
+
+        if let Some((account_dumper, pre_accounts)) = dump_job {
+            let logs = log_collector
+                .as_ref()
+                .map_or_else(Vec::new, |c| c.messages().to_vec());
+
+            let neon_ixs = message.instructions.iter().filter(|&ix| {
+                *ix.program_id(&message.account_keys) == crate::neon_evm_program::id()
+            });
+
+            for (pre_account, (pubkey, account)) in pre_accounts.iter().zip(accounts) {
+                assert_eq!(pre_account.key(), pubkey);
+                let account = account.borrow();
+                let data_changed = pre_account.data().data().eq(account.data());
+                account_dumper.account_loaded(first_signature, &pre_account);
+                account_dumper.account_changed(first_signature, pubkey, &*account, data_changed);
+            }
+
+            account_dumper.transaction_executed(slot, first_signature, message, logs);
+            for neon_ix in neon_ixs {
+                // We rely on the fact that the ix account order is preserved during `visit_each_account`.
+                let mut sorted_pre_accounts = Vec::new();
+                let mut work = |_unique_idx, idx| {
+                    let pre_account: &PreAccount = &pre_accounts[idx];
+                    sorted_pre_accounts.push(pre_account);
+
+                    Ok(())
+                };
+                let _ = neon_ix.visit_each_account(&mut work);
+
+                match EvmInstruction::unpack(neon_ix.data.as_slice()) {
+                    Ok(evm_instruction) => account_dumper.evm_transaction_executed(
+                        first_signature,
+                        evm_instruction,
+                        sorted_pre_accounts,
+                    ),
+                    Err(err) => {
+                        error!("failed to unpack evm instruction {:?}", err);
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 }

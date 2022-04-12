@@ -1,9 +1,11 @@
 FROM solanalabs/rust:latest AS builder
 
+ARG NEON_REVISION
+ENV NEON_REVISION $NEON_REVISION
+
 COPY . /opt
 WORKDIR /opt
 RUN cargo build --release --bin solana --bin solana-validator --bin solana-faucet --bin solana-genesis --bin solana-keygen
-
 
 FROM ubuntu:20.04
 
