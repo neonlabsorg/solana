@@ -390,6 +390,9 @@ lazy_static! {
         (disable_bpf_unresolved_symbols_at_runtime::id(), "Disable reporting of unresolved BPF symbols at runtime"),
         (add_get_processed_sibling_instruction_syscall::id(), "add add_get_processed_sibling_instruction_syscall"),
         (fixed_memcpy_nonoverlapping_check::id(), "use correct check for nonoverlapping regions in memcpy syscall"),
+        (alt_bn128_addition_syscall_enabled::id(), "add alt_bn128_addition_syscall_enabled"),
+        (alt_bn128_multiplication_syscall_enabled::id(), "add alt_bn128_multiplication_syscall_enabled"),
+        (alt_bn128_pairing_syscall_enabled::id(), "add alt_bn128_pairing_syscall_enabled"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
