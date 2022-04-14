@@ -286,7 +286,7 @@ pub fn alt_bn128_addition(input: &[u8]) -> Result<Vec<u8>, AltBn128Error> {
             return Err(AltBn128Error::InvalidInputData);
         }
         let mut result_buffer = [0; ALT_BN128_ADDITION_OUTPUT_LEN];
-        let result = unsafe { sol_alt_bn128_addition(input.as_ptr(), input.len(), result_buffer.as_mut_ptr()) };
+        let result = unsafe { sol_alt_bn128_addition(input.as_ptr(), input.len() as u64, result_buffer.as_mut_ptr()) };
 
         match result {
             0 => Ok(result_buffer.to_vec()),
@@ -337,7 +337,7 @@ pub fn alt_bn128_multiplication(input: &[u8]) -> Result<Vec<u8>, AltBn128Error> 
         }
         let mut result_buffer = [0u8; ALT_BN128_POINT_SIZE];
         let result =
-            unsafe { sol_alt_bn128_multiplication(input.as_ptr(), input.len(), result_buffer.as_mut_ptr()) };
+            unsafe { sol_alt_bn128_multiplication(input.as_ptr(), input.len() as u64, result_buffer.as_mut_ptr()) };
 
         match result {
             0 => Ok(result_buffer.to_vec()),
@@ -386,7 +386,7 @@ pub fn alt_bn128_pairing(input: &[u8]) -> Result<Vec<u8>, AltBn128Error> {
             return Err(AltBn128Error::InvalidInputData);
         }
         let mut result_buffer = [0u8; 32];
-        let result = unsafe { sol_alt_bn128_pairing(input.as_ptr(), input.len(), result_buffer.as_mut_ptr()) };
+        let result = unsafe { sol_alt_bn128_pairing(input.as_ptr(), input.len() as u64, result_buffer.as_mut_ptr()) };
 
         match result {
             0 => Ok(result_buffer.to_vec()),
