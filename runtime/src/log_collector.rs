@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 
 const LOG_MESSAGES_BYTES_LIMIT: usize = 10 * 1000;
 
@@ -27,6 +27,10 @@ impl LogCollector {
             inner.bytes_written += message.len();
             inner.messages.push(message.to_string());
         }
+    }
+
+    pub fn messages(&self) -> Ref<[String]> {
+        Ref::map(self.inner.borrow(), |inner| inner.messages.as_slice())
     }
 }
 

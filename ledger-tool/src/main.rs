@@ -727,6 +727,7 @@ fn load_bank_forks(
         account_paths,
         None,
         snapshot_config.as_ref(),
+        None,
         process_options,
         None,
         None,

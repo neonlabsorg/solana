@@ -51,6 +51,17 @@ $ cd solana
 $ cargo build
 ```
 
+### Neon build
+
+```bash
+# install suitable version of Rust
+$ curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $(cat rust-toolchain)
+
+# set Neon revision
+$ ENV NEON_REVISION="25f8005d150e5bf57ab135b21b101c64b13c3aca"
+$ cargo build
+```
+
 # Testing
 
 **Run the test suite:**

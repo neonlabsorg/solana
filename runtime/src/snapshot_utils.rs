@@ -1,5 +1,6 @@
 use {
     crate::{
+        account_dumper::Config as AccountDumperConfig,
         accounts_db::{AccountShrinkThreshold, AccountsDb},
         accounts_index::AccountSecondaryIndexes,
         accounts_update_notifier_interface::AccountsUpdateNotifier,
@@ -610,6 +611,7 @@ pub fn bank_from_archive<P: AsRef<Path> + std::marker::Sync>(
     test_hash_calculation: bool,
     accounts_db_skip_shrink: bool,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> Result<(Bank, BankFromArchiveTimings)> {
     let unpack_dir = tempfile::Builder::new()
         .prefix(TMP_SNAPSHOT_PREFIX)
@@ -650,6 +652,7 @@ pub fn bank_from_archive<P: AsRef<Path> + std::marker::Sync>(
         limit_load_slot_count_from_snapshot,
         shrink_ratio,
         accounts_update_notifier,
+        account_dumper_config,
     )?;
     measure.stop();
 
@@ -900,6 +903,7 @@ fn rebuild_bank_from_snapshots(
     limit_load_slot_count_from_snapshot: Option<usize>,
     shrink_ratio: AccountShrinkThreshold,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
+    account_dumper_config: Option<AccountDumperConfig>,
 ) -> Result<Bank> {
     let (snapshot_version_enum, root_paths) =
         verify_snapshot_version_and_folder(snapshot_version, unpacked_snapshots_dir)?;
@@ -923,6 +927,7 @@ fn rebuild_bank_from_snapshots(
                 limit_load_slot_count_from_snapshot,
                 shrink_ratio,
                 accounts_update_notifier,
+                account_dumper_config,
             ),
         }?)
     })?;
