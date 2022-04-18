@@ -391,24 +391,17 @@ impl AccountDumper {
         first_signature: &Signature,
         key: &Pubkey,
         shared_data: &AccountSharedData,
-        data_changed: bool,
     ) {
         if !self.dump_after_transaction {
             return;
         }
-
-        let data = if data_changed {
-            shared_data.data().to_vec()
-        } else {
-            Vec::new()
-        };
 
         let row = AccountsRow {
             date_time: db_now(),
             transaction_signature: DbSignature(*first_signature),
             public_key: key.to_bytes(),
             lamports: shared_data.lamports(),
-            data,
+            data: shared_data.data().to_vec(),
             owner: shared_data.owner().to_bytes(),
             executable: shared_data.executable(),
             rent_epoch: shared_data.rent_epoch(),

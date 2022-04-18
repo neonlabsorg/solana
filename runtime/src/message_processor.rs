@@ -1474,9 +1474,8 @@ impl MessageProcessor {
             for (pre_account, (pubkey, account)) in pre_accounts.iter().zip(accounts) {
                 assert_eq!(pre_account.key(), pubkey);
                 let account = account.borrow();
-                let data_changed = pre_account.data().data().eq(account.data());
                 account_dumper.account_loaded(first_signature, &pre_account);
-                account_dumper.account_changed(first_signature, pubkey, &*account, data_changed);
+                account_dumper.account_changed(first_signature, pubkey, &*account);
             }
 
             use std::str::FromStr;
@@ -1484,7 +1483,7 @@ impl MessageProcessor {
             let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent_collector.rent, 17,  &rent_key).unwrap();
             let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
             account_dumper.account_loaded(first_signature, &sysvar_rent);
-            account_dumper.account_changed(first_signature, &solana_sdk::sysvar::rent::id(), &rent_shared, true);
+            account_dumper.account_changed(first_signature, &solana_sdk::sysvar::rent::id(), &rent_shared);
 
             account_dumper.transaction_executed(slot, first_signature, message, logs);
             for neon_ix in neon_ixs {
