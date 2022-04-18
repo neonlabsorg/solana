@@ -3,7 +3,6 @@
 // Extended from Bootstrap
 //
 
-@use 'sass:math';
 
 //
 // Bootstrap Overrides =======================
@@ -12,11 +11,6 @@
 .navbar {
   border-width: 0 0 $border-width 0;
   border-style: solid;
-}
-
-.navbar > [class*="container"] {
-  padding-left: 0;
-  padding-right: 0;
 }
 
 
@@ -32,7 +26,7 @@
 }
 
 .navbar-dark .navbar-divider {
-  background-color: $navbar-dark-divider-color;
+  border-color: $navbar-dark-divider-color;
 }
 
 .navbar-dark .navbar-user {
@@ -42,7 +36,7 @@
 .navbar-dark .navbar-user-link {
   color: $navbar-dark-color;
 
-  &:hover, &:focus {
+  @include hover-focus {
     color: $navbar-dark-hover-color;
   }
 }
@@ -67,7 +61,7 @@
         .navbar-nav .dropdown-item {
           color: $navbar-dark-color;
 
-          &:hover, &:focus {
+          @include hover-focus {
             color: $navbar-dark-hover-color;
           }
         }
@@ -101,7 +95,7 @@
 .navbar-dark.navbar-vibrant .nav-link {
   color: $navbar-vibrant-color;
 
-  &:hover, &:focus {
+  @include hover-focus {
     color: $navbar-vibrant-hover-color;
   }
 }
@@ -116,7 +110,7 @@
 }
 
 .navbar-dark.navbar-vibrant .navbar-divider {
-  background-color: $navbar-vibrant-divider-color;
+  border-color: $navbar-vibrant-divider-color;
 }
 
 .navbar-dark.navbar-vibrant .navbar-user {
@@ -126,7 +120,7 @@
 .navbar-dark.navbar-vibrant .navbar-user-link {
   color: $navbar-vibrant-color;
 
-  &:hover, &:focus {
+  @include hover-focus {
     color: $navbar-vibrant-hover-color;
   }
 }
@@ -155,7 +149,7 @@
         .navbar-nav .dropdown-item {
           color: $navbar-vibrant-color;
 
-          &:hover, &:focus {
+          @include hover-focus {
             color: $navbar-vibrant-hover-color;
           }
         }
@@ -188,7 +182,7 @@
 }
 
 .navbar-light .navbar-divider {
-  background-color: $navbar-light-divider-color;
+  border-color: $navbar-light-divider-color;
 }
 
 .navbar-light .navbar-user {
@@ -198,7 +192,7 @@
 .navbar-light .navbar-user-link {
   color: $navbar-light-color;
 
-  &:hover, &:focus {
+  @include hover-focus {
     color: $navbar-light-hover-color;
   }
 }
@@ -228,7 +222,6 @@
 // Navbar collapse
 
 .navbar-collapse {
-  width: calc(100% + #{$navbar-padding-x * 2});
   margin-left: -$navbar-padding-x;
   margin-right: -$navbar-padding-x;
   padding-left: $navbar-padding-x;
@@ -289,7 +282,7 @@
 }
 
 .navbar-nav .dropdown-menu .dropdown-menu {
-  margin-left: math.div($dropdown-item-padding-x, 2);
+  margin-left: $dropdown-item-padding-x / 2;
 }
 
 .navbar-expand {
@@ -311,7 +304,7 @@
 
 
 // Expanded
-// 
+//
 // Expanded navbar specific styles
 
 .navbar-expand {
@@ -331,8 +324,6 @@
 
         .navbar-collapse {
           flex-grow: inherit;
-          flex-basis: auto;
-          width: auto;
 
           &:before {
             display: none;
@@ -364,6 +355,19 @@
           }
         }
 
+        // Toggle dropdown on hover
+        @if ($navbar-dropdown-toggle-on-hover) {
+          .dropup, .dropright, .dropdown, .dropleft {
+
+            @include hover {
+
+              > .dropdown-menu {
+                display: block;
+              }
+            }
+          }
+        }
+
         .navbar-nav .dropdown-menu {
           border: $dropdown-border-width solid $dropdown-border-color;
         }
@@ -378,12 +382,12 @@
 
 
 //
-// Theme ===================================
+// Dashkit ===================================
 //
 
 // Navbar fixed
 //
-// Adds special zindex to custom fixed-start and fixed-end classes
+// Adds special zindex to custom fixed-left and fixed-right classes
 
 .navbar[class*="fixed-"] {
   z-index: $zindex-fixed;
@@ -475,7 +479,7 @@
     align-items: center;
   }
 
-  .navbar-nav .nav-link[data-bs-toggle="collapse"] {
+  .navbar-nav .nav-link[data-toggle="collapse"] {
 
     &:after {
       display: block;
@@ -516,7 +520,7 @@
 
 
   // Expanded
-  // 
+  //
   // Expanded navbar specific styles
 
   &.navbar-expand {
@@ -550,12 +554,12 @@
             }
           }
 
-          &.fixed-start {
+          &.fixed-left {
             left: 0;
             border-width: 0 1px 0 0;
           }
 
-          &.fixed-end {
+          &.fixed-right {
             right: 0;
             border-width: 0 0 0 1px;
           }
@@ -565,8 +569,6 @@
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            width: auto;
-            min-width: 100%;
             margin-left: -$navbar-vertical-padding-x;
             margin-right: -$navbar-vertical-padding-x;
             padding-left: $navbar-vertical-padding-x;
@@ -651,7 +653,7 @@
 .navbar-vertical-sm {
 
   // Expanded
-  // 
+  //
   // Expanded navbar specific styles
 
   &.navbar-expand {
@@ -667,8 +669,8 @@
           overflow: visible;
 
           .navbar-brand {
-            padding-top: math.div($nav-link-padding-y * 2 + $font-size-base * $line-height-base, 2) - $navbar-padding-y;
-            padding-bottom: math.div($nav-link-padding-y * 2 + $font-size-base * $line-height-base, 2);
+            padding-top: ($nav-link-padding-y * 2 + $font-size-base * $line-height-base) / 2 - $navbar-padding-y;
+            padding-bottom: ($nav-link-padding-y * 2 + $font-size-base * $line-height-base) / 2;
           }
 
           .navbar-brand-img {
@@ -709,7 +711,7 @@
             padding-right: $navbar-vertical-padding-x-sm;
           }
 
-          .navbar-user .dropend .dropdown-menu {
+          .navbar-user .dropright .dropdown-menu {
             top: auto;
             bottom: 0;
           }

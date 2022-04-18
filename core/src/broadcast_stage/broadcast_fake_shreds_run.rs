@@ -1,7 +1,6 @@
 use {
     super::*,
-    solana_entry::entry::Entry,
-    solana_ledger::shred::Shredder,
+    solana_ledger::{entry::Entry, shred::Shredder},
     solana_sdk::{hash::Hash, signature::Keypair},
 };
 
@@ -10,16 +9,16 @@ pub(super) struct BroadcastFakeShredsRun {
     last_blockhash: Hash,
     partition: usize,
     shred_version: u16,
-    next_code_index: u32,
+    keypair: Arc<Keypair>,
 }
 
 impl BroadcastFakeShredsRun {
-    pub(super) fn new(partition: usize, shred_version: u16) -> Self {
+    pub(super) fn new(keypair: Arc<Keypair>, partition: usize, shred_version: u16) -> Self {
         Self {
             last_blockhash: Hash::default(),
             partition,
             shred_version,
-            next_code_index: 0,
+            keypair,
         }
     }
 }
@@ -27,7 +26,6 @@ impl BroadcastFakeShredsRun {
 impl BroadcastRun for BroadcastFakeShredsRun {
     fn run(
         &mut self,
-        keypair: &Keypair,
         blockstore: &Arc<Blockstore>,
         receiver: &Receiver<WorkingBankEntry>,
         socket_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
@@ -49,17 +47,16 @@ impl BroadcastRun for BroadcastFakeShredsRun {
         let shredder = Shredder::new(
             bank.slot(),
             bank.parent().unwrap().slot(),
+            self.keypair.clone(),
             (bank.tick_height() % bank.ticks_per_slot()) as u8,
             self.shred_version,
         )
         .expect("Expected to create a new shredder");
 
-        let (data_shreds, coding_shreds) = shredder.entries_to_shreds(
-            keypair,
+        let (data_shreds, coding_shreds, _) = shredder.entries_to_shreds(
             &receive_results.entries,
             last_tick_height == bank.max_tick_height(),
             next_shred_index,
-            self.next_code_index,
         );
 
         // If the last blockhash is default, a new block is being created
@@ -72,22 +69,11 @@ impl BroadcastRun for BroadcastFakeShredsRun {
             .map(|_| Entry::new(&self.last_blockhash, 0, vec![]))
             .collect();
 
-        let (fake_data_shreds, fake_coding_shreds) = shredder.entries_to_shreds(
-            keypair,
+        let (fake_data_shreds, fake_coding_shreds, _) = shredder.entries_to_shreds(
             &fake_entries,
             last_tick_height == bank.max_tick_height(),
             next_shred_index,
-            self.next_code_index,
         );
-
-        if let Some(index) = coding_shreds
-            .iter()
-            .chain(&fake_coding_shreds)
-            .map(Shred::index)
-            .max()
-        {
-            self.next_code_index = index + 1;
-        }
 
         // If it's the last tick, reset the last block hash to default
         // this will cause next run to grab last bank's blockhash

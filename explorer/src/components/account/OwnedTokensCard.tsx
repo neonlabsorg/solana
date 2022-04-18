@@ -196,7 +196,7 @@ function HoldingsSummaryTable({ tokens }: { tokens: TokenInfoWithPubkey[] }) {
           </td>
         )}
         <td>
-          <Address pubkey={new PublicKey(mintAddress)} link useMetadata />
+          <Address pubkey={new PublicKey(mintAddress)} link />
         </td>
         <td>
           {totalByMint} {tokenDetails && tokenDetails.symbol}
@@ -253,7 +253,9 @@ const DisplayDropdown = ({ display, toggle, show }: DropdownProps) => {
       >
         {display === "detail" ? "Detailed" : "Summary"}
       </button>
-      <div className={`dropdown-menu-end dropdown-menu${show ? " show" : ""}`}>
+      <div
+        className={`dropdown-menu-right dropdown-menu${show ? " show" : ""}`}
+      >
         {DISPLAY_OPTIONS.map((displayOption) => {
           return (
             <Link

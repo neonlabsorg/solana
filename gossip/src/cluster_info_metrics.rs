@@ -4,10 +4,12 @@ use {
     solana_measure::measure::Measure,
     solana_sdk::{clock::Slot, pubkey::Pubkey},
     std::{
-        cmp::Reverse,
         collections::HashMap,
         ops::{Deref, DerefMut},
-        sync::atomic::{AtomicU64, Ordering},
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            RwLock,
+        },
         time::Instant,
     },
 };
@@ -133,7 +135,6 @@ pub(crate) struct GossipStats {
     pub(crate) process_pull_response_success: Counter,
     pub(crate) process_pull_response_timeout: Counter,
     pub(crate) process_push_message: Counter,
-    pub(crate) process_push_success: Counter,
     pub(crate) prune_message_count: Counter,
     pub(crate) prune_message_len: Counter,
     pub(crate) prune_received_cache: Counter,
@@ -146,6 +147,7 @@ pub(crate) struct GossipStats {
     pub(crate) push_response_count: Counter,
     pub(crate) push_vote_read: Counter,
     pub(crate) repair_peers: Counter,
+    pub(crate) require_stake_for_gossip_unknown_feature_set: Counter,
     pub(crate) require_stake_for_gossip_unknown_stakes: Counter,
     pub(crate) skip_pull_response_shred_version: Counter,
     pub(crate) skip_pull_shred_version: Counter,
@@ -159,18 +161,18 @@ pub(crate) struct GossipStats {
 
 pub(crate) fn submit_gossip_stats(
     stats: &GossipStats,
-    gossip: &CrdsGossip,
+    gossip: &RwLock<CrdsGossip>,
     stakes: &HashMap<Pubkey, u64>,
 ) {
     let (crds_stats, table_size, num_nodes, num_pubkeys, purged_values_size, failed_inserts_size) = {
-        let gossip_crds = gossip.crds.read().unwrap();
+        let gossip = gossip.read().unwrap();
         (
-            gossip_crds.take_stats(),
-            gossip_crds.len(),
-            gossip_crds.num_nodes(),
-            gossip_crds.num_pubkeys(),
-            gossip_crds.num_purged(),
-            gossip.pull.failed_inserts_size(),
+            gossip.crds.take_stats(),
+            gossip.crds.len(),
+            gossip.crds.num_nodes(),
+            gossip.crds.num_pubkeys(),
+            gossip.crds.num_purged(),
+            gossip.pull.failed_inserts.len(),
         )
     };
     let num_nodes_staked = stakes.values().filter(|stake| **stake > 0).count();
@@ -205,11 +207,6 @@ pub(crate) fn submit_gossip_stats(
         ("repair_peers", stats.repair_peers.clear(), i64),
         ("new_push_requests", stats.new_push_requests.clear(), i64),
         ("new_push_requests2", stats.new_push_requests2.clear(), i64),
-        (
-            "process_push_success",
-            stats.process_push_success.clear(),
-            i64
-        ),
         ("purge", stats.purge.clear(), i64),
         (
             "process_gossip_packets_time",
@@ -433,6 +430,11 @@ pub(crate) fn submit_gossip_stats(
             i64
         ),
         (
+            "require_stake_for_gossip_unknown_feature_set",
+            stats.require_stake_for_gossip_unknown_feature_set.clear(),
+            i64
+        ),
+        (
             "require_stake_for_gossip_unknown_stakes",
             stats.require_stake_for_gossip_unknown_stakes.clear(),
             i64
@@ -565,8 +567,20 @@ pub(crate) fn submit_gossip_stats(
         ("all-push", crds_stats.push.fails.iter().sum::<usize>(), i64),
         ("all-pull", crds_stats.pull.fails.iter().sum::<usize>(), i64),
     );
-    submit_vote_stats("cluster_info_crds_stats_votes_pull", &crds_stats.pull.votes);
-    submit_vote_stats("cluster_info_crds_stats_votes_push", &crds_stats.push.votes);
+    for (slot, num_votes) in &crds_stats.pull.votes {
+        datapoint_info!(
+            "cluster_info_crds_stats_votes_pull",
+            ("slot", *slot, i64),
+            ("num_votes", *num_votes, i64),
+        );
+    }
+    for (slot, num_votes) in &crds_stats.push.votes {
+        datapoint_info!(
+            "cluster_info_crds_stats_votes_push",
+            ("slot", *slot, i64),
+            ("num_votes", *num_votes, i64),
+        );
+    }
     let votes: HashMap<Slot, usize> = crds_stats
         .pull
         .votes
@@ -581,20 +595,11 @@ pub(crate) fn submit_gossip_stats(
         )
         .into_grouping_map()
         .aggregate(|acc, _slot, num_votes| Some(acc.unwrap_or_default() + num_votes));
-    submit_vote_stats("cluster_info_crds_stats_votes", &votes);
-}
-
-fn submit_vote_stats<'a, I>(name: &'static str, votes: I)
-where
-    I: IntoIterator<Item = (&'a Slot, /*num-votes:*/ &'a usize)>,
-{
-    // Submit vote stats only for the top most voted slots.
-    const NUM_SLOTS: usize = 20;
-    let mut votes: Vec<_> = votes.into_iter().map(|(k, v)| (*k, *v)).collect();
-    if votes.len() > NUM_SLOTS {
-        votes.select_nth_unstable_by_key(NUM_SLOTS, |(_, num)| Reverse(*num));
-    }
-    for (slot, num_votes) in votes.into_iter().take(NUM_SLOTS) {
-        datapoint_info!(name, ("slot", slot, i64), ("num_votes", num_votes, i64),);
+    for (slot, num_votes) in votes {
+        datapoint_info!(
+            "cluster_info_crds_stats_votes",
+            ("slot", slot, i64),
+            ("num_votes", num_votes, i64),
+        );
     }
 }

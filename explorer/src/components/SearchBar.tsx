@@ -6,7 +6,6 @@ import StateManager from "react-select";
 import {
   LOADER_IDS,
   PROGRAM_NAME_BY_ID,
-  SPECIAL_IDS,
   SYSVAR_IDS,
   LoaderName,
   programLabel,
@@ -21,7 +20,7 @@ export function SearchBar() {
   const history = useHistory();
   const location = useLocation();
   const { tokenRegistry } = useTokenRegistry();
-  const { cluster, clusterInfo } = useCluster();
+  const { cluster } = useCluster();
 
   const onChange = (
     { pathname }: ValueType<any, false>,
@@ -44,12 +43,7 @@ export function SearchBar() {
         <div className="col">
           <Select
             ref={(ref) => (selectRef.current = ref)}
-            options={buildOptions(
-              search,
-              cluster,
-              tokenRegistry,
-              clusterInfo?.epochInfo.epoch
-            )}
+            options={buildOptions(search, cluster, tokenRegistry)}
             noOptionsMessage={() => "No Results"}
             placeholder="Search for blocks, accounts, transactions, programs, and tokens"
             value={resetValue}
@@ -147,28 +141,6 @@ function buildSysvarOptions(search: string) {
   }
 }
 
-function buildSpecialOptions(search: string) {
-  const matchedSpecialIds = Object.entries(SPECIAL_IDS).filter(
-    ([address, name]) => {
-      return (
-        name.toLowerCase().includes(search.toLowerCase()) ||
-        address.includes(search)
-      );
-    }
-  );
-
-  if (matchedSpecialIds.length > 0) {
-    return {
-      label: "Accounts",
-      options: matchedSpecialIds.map(([id, name]) => ({
-        label: name,
-        value: [name, id],
-        pathname: "/address/" + id,
-      })),
-    };
-  }
-}
-
 function buildTokenOptions(
   search: string,
   cluster: Cluster,
@@ -200,8 +172,7 @@ function buildTokenOptions(
 function buildOptions(
   rawSearch: string,
   cluster: Cluster,
-  tokenRegistry: TokenInfoMap,
-  currentEpoch?: number
+  tokenRegistry: TokenInfoMap
 ) {
   const search = rawSearch.trim();
   if (search.length === 0) return [];
@@ -223,11 +194,6 @@ function buildOptions(
     options.push(sysvarOptions);
   }
 
-  const specialOptions = buildSpecialOptions(search);
-  if (specialOptions) {
-    options.push(specialOptions);
-  }
-
   const tokenOptions = buildTokenOptions(search, cluster, tokenRegistry);
   if (tokenOptions) {
     options.push(tokenOptions);
@@ -244,19 +210,6 @@ function buildOptions(
         },
       ],
     });
-
-    if (currentEpoch !== undefined && Number(search) <= currentEpoch + 1) {
-      options.push({
-        label: "Epoch",
-        options: [
-          {
-            label: `Epoch #${search}`,
-            value: [search],
-            pathname: `/epoch/${search}`,
-          },
-        ],
-      });
-    }
   }
 
   // Prefer nice suggestions over raw suggestions

@@ -20,7 +20,6 @@ import {
 } from "components/common/Account";
 import { displayTimestamp } from "utils/date";
 import { Slot } from "components/common/Slot";
-import { Epoch } from "components/common/Epoch";
 
 export function SysvarAccountSection({
   account,
@@ -170,7 +169,7 @@ function SysvarAccountSlotHistory({
             Slot History{" "}
             <span className="text-muted">(previous 100 slots)</span>
           </td>
-          <td className="text-lg-end font-monospace">
+          <td className="text-lg-right text-monospace">
             {history.map((val) => (
               <p key={val} className="mb-0">
                 <Slot slot={val} link />
@@ -226,7 +225,7 @@ function SysvarAccountFeesCard({
 
         <tr>
           <td>Lamports Per Signature</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             {sysvarAccount.info.feeCalculator.lamportsPerSignature}
           </td>
         </tr>
@@ -256,31 +255,33 @@ function SysvarAccountEpochScheduleCard({
 
         <tr>
           <td>Slots Per Epoch</td>
-          <td className="text-lg-end">{sysvarAccount.info.slotsPerEpoch}</td>
+          <td className="text-lg-right">{sysvarAccount.info.slotsPerEpoch}</td>
         </tr>
 
         <tr>
           <td>Leader Schedule Slot Offset</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             {sysvarAccount.info.leaderScheduleSlotOffset}
           </td>
         </tr>
 
         <tr>
           <td>Epoch Warmup Enabled</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             <code>{sysvarAccount.info.warmup ? "true" : "false"}</code>
           </td>
         </tr>
 
         <tr>
           <td>First Normal Epoch</td>
-          <td className="text-lg-end">{sysvarAccount.info.firstNormalEpoch}</td>
+          <td className="text-lg-right">
+            {sysvarAccount.info.firstNormalEpoch}
+          </td>
         </tr>
 
         <tr>
           <td>First Normal Slot</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             <Slot slot={sysvarAccount.info.firstNormalSlot} />
           </td>
         </tr>
@@ -310,28 +311,26 @@ function SysvarAccountClockCard({
 
         <tr>
           <td>Timestamp</td>
-          <td className="text-lg-end font-monospace">
+          <td className="text-lg-right text-monospace">
             {displayTimestamp(sysvarAccount.info.unixTimestamp * 1000)}
           </td>
         </tr>
 
         <tr>
           <td>Epoch</td>
-          <td className="text-lg-end">
-            <Epoch epoch={sysvarAccount.info.epoch} link />
-          </td>
+          <td className="text-lg-right">{sysvarAccount.info.epoch}</td>
         </tr>
 
         <tr>
           <td>Leader Schedule Epoch</td>
-          <td className="text-lg-end">
-            <Epoch epoch={sysvarAccount.info.leaderScheduleEpoch} link />
+          <td className="text-lg-right">
+            {sysvarAccount.info.leaderScheduleEpoch}
           </td>
         </tr>
 
         <tr>
           <td>Slot</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             <Slot slot={sysvarAccount.info.slot} link />
           </td>
         </tr>
@@ -361,21 +360,21 @@ function SysvarAccountRentCard({
 
         <tr>
           <td>Burn Percent</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             {sysvarAccount.info.burnPercent + "%"}
           </td>
         </tr>
 
         <tr>
           <td>Exemption Threshold</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             {sysvarAccount.info.exemptionThreshold} years
           </td>
         </tr>
 
         <tr>
           <td>Lamports Per Byte Year</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             {sysvarAccount.info.lamportsPerByteYear}
           </td>
         </tr>
@@ -410,7 +409,7 @@ function SysvarAccountRewardsCard({
 
         <tr>
           <td>Validator Point Value</td>
-          <td className="text-lg-end font-monospace">
+          <td className="text-lg-right text-monospace">
             {validatorPointValueFormatted} lamports
           </td>
         </tr>

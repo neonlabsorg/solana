@@ -4,8 +4,13 @@
 
 @mixin badge-variant-soft($bg, $color) {
   color: $color;
+  background-color: $bg;
 
-  &[href]:hover, &[href]:focus {
-    background-color: darken($bg, 5%) !important;
+  &[href] {
+    @include hover-focus {
+      color: $color;
+      text-decoration: none;
+      background-color: darken($bg, 5%);
+    }
   }
 }

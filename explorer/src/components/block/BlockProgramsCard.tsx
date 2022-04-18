@@ -62,13 +62,15 @@ export function BlockProgramsCard({ block }: { block: BlockResponse }) {
         <TableCardBody>
           <tr>
             <td className="w-100">Unique Programs Count</td>
-            <td className="text-lg-end font-monospace">
+            <td className="text-lg-right text-monospace">
               {programEntries.length}
             </td>
           </tr>
           <tr>
             <td className="w-100">Total Instructions</td>
-            <td className="text-lg-end font-monospace">{totalInstructions}</td>
+            <td className="text-lg-right text-monospace">
+              {totalInstructions}
+            </td>
           </tr>
         </TableCardBody>
       </div>

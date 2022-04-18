@@ -83,6 +83,7 @@ pub enum CliCommand {
         filter: RpcTransactionLogsFilter,
     },
     Ping {
+        lamports: u64,
         interval: Duration,
         count: Option<u64>,
         timeout: Duration,
@@ -320,13 +321,6 @@ pub enum CliCommand {
         blockhash_query: BlockhashQuery,
         nonce_account: Option<Pubkey>,
         nonce_authority: SignerIndex,
-        memo: Option<String>,
-        fee_payer: SignerIndex,
-    },
-    CloseVoteAccount {
-        vote_account_pubkey: Pubkey,
-        destination_account_pubkey: Pubkey,
-        withdraw_authority: SignerIndex,
         memo: Option<String>,
         fee_payer: SignerIndex,
     },
@@ -850,9 +844,6 @@ pub fn parse_command(
         ("withdraw-from-vote-account", Some(matches)) => {
             parse_withdraw_from_vote_account(matches, default_signer, wallet_manager)
         }
-        ("close-vote-account", Some(matches)) => {
-            parse_close_vote_account(matches, default_signer, wallet_manager)
-        }
         // Wallet Commands
         ("account", Some(matches)) => parse_account(matches, wallet_manager),
         ("address", Some(matches)) => Ok(CliCommandInfo {
@@ -972,6 +963,7 @@ pub fn process_command(config: &CliConfig) -> ProcessResult {
         CliCommand::LiveSlots => process_live_slots(config),
         CliCommand::Logs { filter } => process_logs(config, filter),
         CliCommand::Ping {
+            lamports,
             interval,
             count,
             timeout,
@@ -980,6 +972,7 @@ pub fn process_command(config: &CliConfig) -> ProcessResult {
         } => process_ping(
             &rpc_client,
             config,
+            *lamports,
             interval,
             count,
             timeout,
@@ -1474,21 +1467,6 @@ pub fn process_command(config: &CliConfig) -> ProcessResult {
             memo.as_ref(),
             *fee_payer,
         ),
-        CliCommand::CloseVoteAccount {
-            vote_account_pubkey,
-            withdraw_authority,
-            destination_account_pubkey,
-            memo,
-            fee_payer,
-        } => process_close_vote_account(
-            &rpc_client,
-            config,
-            vote_account_pubkey,
-            *withdraw_authority,
-            destination_account_pubkey,
-            memo.as_ref(),
-            *fee_payer,
-        ),
         CliCommand::VoteAuthorize {
             vote_account_pubkey,
             new_authorized_pubkey,
@@ -1639,7 +1617,7 @@ pub fn request_and_confirm_airdrop(
     to_pubkey: &Pubkey,
     lamports: u64,
 ) -> ClientResult<Signature> {
-    let recent_blockhash = rpc_client.get_latest_blockhash()?;
+    let (recent_blockhash, _fee_calculator) = rpc_client.get_recent_blockhash()?;
     let signature =
         rpc_client.request_airdrop_with_blockhash(to_pubkey, lamports, &recent_blockhash)?;
     rpc_client.confirm_transaction_with_spinner(
@@ -1706,7 +1684,7 @@ mod tests {
         serde_json::{json, Value},
         solana_client::{
             blockhash_query,
-            mock_sender_for_cli::SIGNATURE,
+            mock_sender::SIGNATURE,
             rpc_request::RpcRequest,
             rpc_response::{Response, RpcResponseContext},
         },

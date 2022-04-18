@@ -5,14 +5,11 @@
  * to ensure cascade of styles.
  */
 
-$path-to-img: "/img/dashkit" !default;
-$path-to-fonts: "/fonts" !default;
-
  // Icon font
 @import "../fonts/feather/feather";
 
 // Bootstrap functions
-@import '~bootstrap/scss/functions';
+@import '~bootstrap/scss/functions.scss';
 
 // Custom variables
 @import 'solana-variables-dark';
@@ -27,10 +24,10 @@ $path-to-fonts: "/fonts" !default;
 @import 'dashkit/variables';
 
 // Bootstrap core
-@import '~bootstrap/scss/bootstrap';
+@import '~bootstrap/scss/bootstrap.scss';
 
 // Dashkit core
-@import 'dashkit/theme';
+@import 'dashkit/dashkit';
 
 // Dark mode overrides
 @import 'dashkit/dark/overrides-dark';

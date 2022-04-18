@@ -5,7 +5,7 @@ import { AccountBalancePair } from "@solana/web3.js";
 import { useRichList, useFetchRichList, Status } from "providers/richList";
 import { LoadingCard } from "./common/LoadingCard";
 import { ErrorCard } from "./common/ErrorCard";
-import { SolBalance } from "utils";
+import { lamportsToSolString } from "utils";
 import { useQuery } from "utils/url";
 import { useSupply } from "providers/supply";
 import { Address } from "./common/Address";
@@ -86,7 +86,7 @@ export function TopAccountsCard() {
         {richList === Status.Idle && (
           <div className="card-body">
             <span
-              className="btn btn-white ms-3 d-none d-md-inline"
+              className="btn btn-white ml-3 d-none d-md-inline"
               onClick={fetchRichList}
             >
               Load Largest Accounts
@@ -101,8 +101,10 @@ export function TopAccountsCard() {
                 <tr>
                   <th className="text-muted">Rank</th>
                   <th className="text-muted">Address</th>
-                  <th className="text-muted text-end">Balance (SOL)</th>
-                  <th className="text-muted text-end">% of {header} Supply</th>
+                  <th className="text-muted text-right">Balance (SOL)</th>
+                  <th className="text-muted text-right">
+                    % of {header} Supply
+                  </th>
                 </tr>
               </thead>
               <tbody className="list">
@@ -126,17 +128,16 @@ const renderAccountRow = (
   return (
     <tr key={index}>
       <td>
-        <span className="badge bg-gray-soft badge-pill">{index + 1}</span>
+        <span className="badge badge-soft-gray badge-pill">{index + 1}</span>
       </td>
       <td>
         <Address pubkey={account.address} link />
       </td>
-      <td className="text-end">
-        <SolBalance lamports={account.lamports} maximumFractionDigits={0} />
-      </td>
-      <td className="text-end">{`${((100 * account.lamports) / supply).toFixed(
-        3
-      )}%`}</td>
+      <td className="text-right">{lamportsToSolString(account.lamports, 0)}</td>
+      <td className="text-right">{`${(
+        (100 * account.lamports) /
+        supply
+      ).toFixed(3)}%`}</td>
     </tr>
   );
 };
@@ -200,7 +201,9 @@ const FilterDropdown = ({ filter, toggle, show }: DropdownProps) => {
       >
         {filterTitle(filter)}
       </button>
-      <div className={`dropdown-menu-end dropdown-menu${show ? " show" : ""}`}>
+      <div
+        className={`dropdown-menu-right dropdown-menu${show ? " show" : ""}`}
+      >
         {FILTERS.map((filterOption) => {
           return (
             <Link

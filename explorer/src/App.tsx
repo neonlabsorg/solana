@@ -8,12 +8,10 @@ import { ClusterStatusBanner } from "components/ClusterStatusButton";
 import { SearchBar } from "components/SearchBar";
 
 import { AccountDetailsPage } from "pages/AccountDetailsPage";
-import { TransactionInspectorPage } from "pages/inspector/InspectorPage";
 import { ClusterStatsPage } from "pages/ClusterStatsPage";
 import { SupplyPage } from "pages/SupplyPage";
 import { TransactionDetailsPage } from "pages/TransactionDetailsPage";
 import { BlockDetailsPage } from "pages/BlockDetailsPage";
-import { EpochDetailsPage } from "pages/EpochDetailsPage";
 
 const ADDRESS_ALIASES = ["account", "accounts", "addresses"];
 const TX_ALIASES = ["txs", "txn", "txns", "transaction", "transactions"];
@@ -22,7 +20,7 @@ function App() {
   return (
     <>
       <ClusterModal />
-      <div className="main-content pb-4">
+      <div className="main-content">
         <Navbar />
         <MessageBanner />
         <ClusterStatusBanner />
@@ -41,22 +39,10 @@ function App() {
           />
           <Route
             exact
-            path={["/tx/inspector", "/tx/:signature/inspect"]}
-            render={({ match }) => (
-              <TransactionInspectorPage signature={match.params.signature} />
-            )}
-          />
-          <Route
-            exact
             path={"/tx/:signature"}
             render={({ match }) => (
               <TransactionDetailsPage signature={match.params.signature} />
             )}
-          />
-          <Route
-            exact
-            path={"/epoch/:id"}
-            render={({ match }) => <EpochDetailsPage epoch={match.params.id} />}
           />
           <Route
             exact

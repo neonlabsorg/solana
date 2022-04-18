@@ -30,21 +30,21 @@ export function NonceAccountSection({
 
         <tr>
           <td>Authority</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             <Address pubkey={nonceAccount.info.authority} alignRight raw link />
           </td>
         </tr>
 
         <tr>
           <td>Blockhash</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             <code>{nonceAccount.info.blockhash}</code>
           </td>
         </tr>
 
         <tr>
           <td>Fee</td>
-          <td className="text-lg-end">
+          <td className="text-lg-right">
             {nonceAccount.info.feeCalculator.lamportsPerSignature} lamports per
             signature
           </td>

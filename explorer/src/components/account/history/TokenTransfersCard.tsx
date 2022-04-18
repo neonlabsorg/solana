@@ -185,7 +185,7 @@ export function TokenTransfersCard({ pubkey }: { pubkey: PublicKey }) {
               </td>
 
               <td>
-                <span className={`badge bg-${statusClass}-soft`}>
+                <span className={`badge badge-soft-${statusClass}`}>
                   {statusText}
                 </span>
               </td>

@@ -226,44 +226,6 @@ EOF
     annotate --style info \
       "downstream-projects skipped as no relevant files were modified"
   fi
-
-  # Downstream Anchor projects backwards compatibility
-  if affects \
-             .rs$ \
-             Cargo.lock$ \
-             Cargo.toml$ \
-             ^ci/rust-version.sh \
-             ^ci/test-stable-perf.sh \
-             ^ci/test-stable.sh \
-             ^ci/test-local-cluster.sh \
-             ^core/build.rs \
-             ^fetch-perf-libs.sh \
-             ^programs/ \
-             ^sdk/ \
-             ^scripts/build-downstream-anchor-projects.sh \
-      ; then
-    cat >> "$output_file" <<"EOF"
-  - command: "scripts/build-downstream-anchor-projects.sh"
-    name: "downstream-anchor-projects"
-    timeout_in_minutes: 10
-EOF
-  else
-    annotate --style info \
-      "downstream-anchor-projects skipped as no relevant files were modified"
-  fi
-
-  # Wasm support
-  if affects \
-             ^ci/test-wasm.sh \
-             ^ci/test-stable.sh \
-             ^sdk/ \
-      ; then
-    command_step wasm ". ci/rust-version.sh; ci/docker-run.sh \$\$rust_stable_docker_image ci/test-wasm.sh" 20
-  else
-    annotate --style info \
-      "wasm skipped as no relevant files were modified"
-  fi
-
   # Benches...
   if affects \
              .rs$ \
@@ -308,7 +270,7 @@ pull_or_push_steps() {
     all_test_steps
   fi
 
-  # web3.js, explorer and docs changes run on Travis or Github actions...
+  # web3.js, explorer and docs changes run on Travis...
 }
 
 

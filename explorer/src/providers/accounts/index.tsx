@@ -1,5 +1,4 @@
 import React from "react";
-import { pubkeyToString } from "utils";
 import { PublicKey, Connection, StakeActivationData } from "@solana/web3.js";
 import { useCluster, Cluster } from "../cluster";
 import { HistoryProvider } from "./history";
@@ -26,11 +25,7 @@ import {
   UpgradeableLoaderAccount,
 } from "validators/accounts/upgradeable-program";
 import { RewardsProvider } from "./rewards";
-import { programs, MetadataJson } from "@metaplex/js";
-import getEditionInfo, { EditionInfo } from "./utils/getEditionInfo";
 export { useAccountHistory } from "./history";
-
-const Metadata = programs.metadata.Metadata;
 
 export type StakeProgramData = {
   program: "stake";
@@ -44,16 +39,9 @@ export type UpgradeableLoaderAccountData = {
   programData?: ProgramDataAccountInfo;
 };
 
-export type NFTData = {
-  metadata: programs.metadata.MetadataData;
-  json: MetadataJson | undefined;
-  editionInfo: EditionInfo;
-};
-
 export type TokenProgramData = {
   program: "spl-token";
   parsed: TokenAccount;
-  nftData?: NFTData;
 };
 
 export type VoteProgramData = {
@@ -88,7 +76,7 @@ export type ProgramData =
 export interface Details {
   executable: boolean;
   owner: PublicKey;
-  space: number;
+  space?: number;
   data?: ProgramData;
 }
 
@@ -155,7 +143,7 @@ async function fetchAccountInfo(
       lamports = result.lamports;
 
       // Only save data in memory if we can decode it
-      let space: number;
+      let space;
       if (!("parsed" in result.data)) {
         space = result.data.length;
       } else {
@@ -238,42 +226,9 @@ async function fetchAccountInfo(
               break;
 
             case "spl-token":
-              const parsed = create(info, TokenAccount);
-              let nftData;
-
-              try {
-                // Generate a PDA and check for a Metadata Account
-                if (parsed.type === "mint") {
-                  const metadata = await Metadata.load(
-                    connection,
-                    await Metadata.getPDA(pubkey)
-                  );
-                  if (metadata) {
-                    // We have a valid Metadata account. Try and pull edition data.
-                    const editionInfo = await getEditionInfo(
-                      metadata,
-                      connection
-                    );
-                    const id = pubkeyToString(pubkey);
-                    const metadataJSON = await getMetaDataJSON(
-                      id,
-                      metadata.data
-                    );
-                    nftData = {
-                      metadata: metadata.data,
-                      json: metadataJSON,
-                      editionInfo,
-                    };
-                  }
-                }
-              } catch (error) {
-                // unable to find NFT metadata account
-              }
-
               data = {
                 program: result.data.program,
-                parsed,
-                nftData,
+                parsed: create(info, TokenAccount),
               };
               break;
             default:
@@ -307,53 +262,6 @@ async function fetchAccountInfo(
     url,
   });
 }
-
-const getMetaDataJSON = async (
-  id: string,
-  metadata: programs.metadata.MetadataData
-): Promise<MetadataJson | undefined> => {
-  return new Promise(async (resolve, reject) => {
-    const uri = metadata.data.uri;
-    if (!uri) return resolve(undefined);
-
-    const processJson = (extended: any) => {
-      if (!extended || extended?.properties?.files?.length === 0) {
-        return;
-      }
-
-      if (extended?.image) {
-        extended.image = extended.image.startsWith("http")
-          ? extended.image
-          : `${metadata.data.uri}/${extended.image}`;
-      }
-
-      return extended;
-    };
-
-    try {
-      fetch(uri)
-        .then(async (_) => {
-          try {
-            const data = await _.json();
-            try {
-              localStorage.setItem(uri, JSON.stringify(data));
-            } catch {
-              // ignore
-            }
-            resolve(processJson(data));
-          } catch {
-            resolve(undefined);
-          }
-        })
-        .catch(() => {
-          resolve(undefined);
-        });
-    } catch (ex) {
-      console.error(ex);
-      resolve(undefined);
-    }
-  });
-};
 
 export function useAccounts() {
   const context = React.useContext(StateContext);

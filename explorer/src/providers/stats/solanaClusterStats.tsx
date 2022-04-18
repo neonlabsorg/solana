@@ -53,34 +53,26 @@ const initialDashboardInfo: DashboardInfo = {
 };
 
 type SetActive = React.Dispatch<React.SetStateAction<boolean>>;
-const StatsProviderContext = React.createContext<
-  | {
-      setActive: SetActive;
-      setTimedOut: Function;
-      retry: Function;
-      active: boolean;
-    }
-  | undefined
->(undefined);
+const StatsProviderContext =
+  React.createContext<
+    | {
+        setActive: SetActive;
+        setTimedOut: Function;
+        retry: Function;
+        active: boolean;
+      }
+    | undefined
+  >(undefined);
 
 type DashboardState = { info: DashboardInfo };
-const DashboardContext = React.createContext<DashboardState | undefined>(
-  undefined
-);
+const DashboardContext =
+  React.createContext<DashboardState | undefined>(undefined);
 
 type PerformanceState = { info: PerformanceInfo };
-const PerformanceContext = React.createContext<PerformanceState | undefined>(
-  undefined
-);
+const PerformanceContext =
+  React.createContext<PerformanceState | undefined>(undefined);
 
 type Props = { children: React.ReactNode };
-
-function getConnection(url: string): Connection | undefined {
-  try {
-    return new Connection(url);
-  } catch (error) {}
-}
-
 export function SolanaClusterStatsProvider({ children }: Props) {
   const { cluster, url } = useCluster();
   const [active, setActive] = React.useState(false);
@@ -96,10 +88,7 @@ export function SolanaClusterStatsProvider({ children }: Props) {
   React.useEffect(() => {
     if (!active || !url) return;
 
-    const connection = getConnection(url);
-
-    if (!connection) return;
-
+    const connection = new Connection(url);
     let lastSlot: number | null = null;
 
     const getPerformanceSamples = async () => {
@@ -126,16 +115,14 @@ export function SolanaClusterStatsProvider({ children }: Props) {
         if (cluster !== Cluster.Custom) {
           reportError(error, { url });
         }
-        if (error instanceof Error) {
-          dispatchPerformanceInfo({
-            type: PerformanceInfoActionType.SetError,
-            data: error.toString(),
-          });
-          dispatchDashboardInfo({
-            type: DashboardInfoActionType.SetError,
-            data: error.toString(),
-          });
-        }
+        dispatchPerformanceInfo({
+          type: PerformanceInfoActionType.SetError,
+          data: error.toString(),
+        });
+        dispatchDashboardInfo({
+          type: DashboardInfoActionType.SetError,
+          data: error.toString(),
+        });
         setActive(false);
       }
     };
@@ -151,12 +138,10 @@ export function SolanaClusterStatsProvider({ children }: Props) {
         if (cluster !== Cluster.Custom) {
           reportError(error, { url });
         }
-        if (error instanceof Error) {
-          dispatchPerformanceInfo({
-            type: PerformanceInfoActionType.SetError,
-            data: error.toString(),
-          });
-        }
+        dispatchPerformanceInfo({
+          type: PerformanceInfoActionType.SetError,
+          data: error.toString(),
+        });
         setActive(false);
       }
     };
@@ -173,12 +158,10 @@ export function SolanaClusterStatsProvider({ children }: Props) {
         if (cluster !== Cluster.Custom) {
           reportError(error, { url });
         }
-        if (error instanceof Error) {
-          dispatchDashboardInfo({
-            type: DashboardInfoActionType.SetError,
-            data: error.toString(),
-          });
-        }
+        dispatchDashboardInfo({
+          type: DashboardInfoActionType.SetError,
+          data: error.toString(),
+        });
         setActive(false);
       }
     };

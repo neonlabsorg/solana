@@ -6,8 +6,6 @@ import { displayAddress } from "utils/tx";
 import { useCluster } from "providers/cluster";
 import { Copyable } from "./Copyable";
 import { useTokenRegistry } from "providers/mints/token-registry";
-import { useState, useEffect } from "react";
-import { Connection, programs } from "@metaplex/js";
 
 type Props = {
   pubkey: PublicKey;
@@ -17,7 +15,6 @@ type Props = {
   truncate?: boolean;
   truncateUnknown?: boolean;
   truncateChars?: number;
-  useMetadata?: boolean;
 };
 
 export function Address({
@@ -28,7 +25,6 @@ export function Address({
   truncate,
   truncateUnknown,
   truncateChars,
-  useMetadata,
 }: Props) {
   const address = pubkey.toBase58();
   const { tokenRegistry } = useTokenRegistry();
@@ -45,16 +41,13 @@ export function Address({
     ? address
     : displayAddress(address, cluster, tokenRegistry);
 
-  var metaplexData = useTokenMetadata(useMetadata, address);
-  if (metaplexData && metaplexData.data)
-    addressLabel = metaplexData.data.data.name;
   if (truncateChars && addressLabel === address) {
     addressLabel = addressLabel.slice(0, truncateChars) + "…";
   }
 
   const content = (
     <Copyable text={address} replaceText={!alignRight}>
-      <span className="font-monospace">
+      <span className="text-monospace">
         {link ? (
           <Link
             className={truncate ? "text-truncate address-truncate" : ""}
@@ -84,31 +77,3 @@ export function Address({
     </>
   );
 }
-export const useTokenMetadata = (
-  useMetadata: boolean | undefined,
-  pubkey: string
-) => {
-  const [data, setData] = useState<programs.metadata.MetadataData>();
-  var { url } = useCluster();
-
-  useEffect(() => {
-    if (!useMetadata) return;
-    if (pubkey && !data) {
-      programs.metadata.Metadata.getPDA(pubkey)
-        .then((pda) => {
-          const connection = new Connection(url);
-          programs.metadata.Metadata.load(connection, pda)
-            .then((metadata) => {
-              setData(metadata.data);
-            })
-            .catch(() => {
-              setData(undefined);
-            });
-        })
-        .catch(() => {
-          setData(undefined);
-        });
-    }
-  }, [useMetadata, pubkey, url, data, setData]);
-  return { data };
-};

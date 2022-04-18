@@ -25,35 +25,35 @@ export function CollectFeesDetailsCard(props: {
     >
       <tr>
         <td>Program</td>
-        <td className="text-lg-end">
+        <td className="text-lg-right">
           <Address pubkey={info.programId} alignRight link />
         </td>
       </tr>
 
       <tr>
         <td>Signal Provider</td>
-        <td className="text-lg-end">
+        <td className="text-lg-right">
           <Address pubkey={info.signalProviderPoolTokenKey} alignRight link />
         </td>
       </tr>
 
       <tr>
         <td>Insurance Fund</td>
-        <td className="text-lg-end">
+        <td className="text-lg-right">
           <Address pubkey={info.bonfidaFeePoolTokenKey} alignRight link />
         </td>
       </tr>
 
       <tr>
         <td>Buy and Burn</td>
-        <td className="text-lg-end">
+        <td className="text-lg-right">
           <Address pubkey={info.bonfidaBnBPTKey} alignRight link />
         </td>
       </tr>
 
       <tr>
         <td>Pool Seed</td>
-        <td className="text-lg-end">{info.poolSeed}</td>
+        <td className="text-lg-right">{info.poolSeed}</td>
       </tr>
     </InstructionCard>
   );

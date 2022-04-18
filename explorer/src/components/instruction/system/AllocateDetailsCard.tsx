@@ -23,27 +23,27 @@ export function AllocateDetailsCard(props: {
       ix={ix}
       index={index}
       result={result}
-      title="System Program: Allocate Account"
+      title="Allocate Account"
       innerCards={innerCards}
       childIndex={childIndex}
     >
       <tr>
         <td>Program</td>
-        <td className="text-lg-end">
+        <td className="text-lg-right">
           <Address pubkey={SystemProgram.programId} alignRight link />
         </td>
       </tr>
 
       <tr>
         <td>Account Address</td>
-        <td className="text-lg-end">
+        <td className="text-lg-right">
           <Address pubkey={info.account} alignRight link />
         </td>
       </tr>
 
       <tr>
-        <td>Allocated Data Size</td>
-        <td className="text-lg-end">{info.space} byte(s)</td>
+        <td>Allocated Space (Bytes)</td>
+        <td className="text-lg-right">{info.space}</td>
       </tr>
     </InstructionCard>
   );

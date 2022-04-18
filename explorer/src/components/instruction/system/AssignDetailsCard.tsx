@@ -23,27 +23,27 @@ export function AssignDetailsCard(props: {
       ix={ix}
       index={index}
       result={result}
-      title="System Program: Assign Account"
+      title="Assign Account"
       innerCards={innerCards}
       childIndex={childIndex}
     >
       <tr>
         <td>Program</td>
-        <td className="text-lg-end">
+        <td className="text-lg-right">
           <Address pubkey={SystemProgram.programId} alignRight link />
         </td>
       </tr>
 
       <tr>
         <td>Account Address</td>
-        <td className="text-lg-end">
+        <td className="text-lg-right">
           <Address pubkey={info.account} alignRight link />
         </td>
       </tr>
 
       <tr>
-        <td>Assigned Program Id</td>
-        <td className="text-lg-end">
+        <td>Assigned Owner</td>
+        <td className="text-lg-right">
           <Address pubkey={info.owner} alignRight link />
         </td>
       </tr>
