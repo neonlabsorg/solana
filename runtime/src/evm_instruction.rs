@@ -37,8 +37,9 @@ impl rlp::Encodable for SignedTransaction<'_> {
                 + U256::from(35)
                 + U256::from(2) * self.unsigned.chain_id),
         );
-        s.append(&self.signature[..32].as_ref());
-        s.append(&self.signature[32..64].as_ref());
+        // we have to skip zeros here as it is "number"
+        s.append(&U256::from(self.signature[..32].as_ref()));
+        s.append(&U256::from(self.signature[32..64].as_ref()));
         /*
         s.append(&self.chain_id);
         s.append_empty_data();

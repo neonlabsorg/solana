@@ -1,16 +1,15 @@
 use {
     crate::{
-        account_dumper::AccountDumper, accounts::Accounts, ancestors::Ancestors, bank::TransactionAccountRefCell,
-        instruction_recorder::InstructionRecorder, log_collector::LogCollector,
-        native_loader::NativeLoader, rent_collector::RentCollector,
+        account_dumper::AccountDumper, accounts::Accounts, ancestors::Ancestors,
+        bank::TransactionAccountRefCell, instruction_recorder::InstructionRecorder,
+        log_collector::LogCollector, native_loader::NativeLoader, rent_collector::RentCollector,
     },
+    //use solana_program_runtime::{ExecuteDetailsTimings, Executors, InstructionProcessor, PreAccount};
+    evm_loader::instruction::EvmInstruction,
     log::*,
     serde::{Deserialize, Serialize},
     solana_measure::measure::Measure,
-    //use solana_program_runtime::{ExecuteDetailsTimings, Executors, InstructionProcessor, PreAccount};
-    evm_loader::instruction::EvmInstruction,
     solana_sdk::{
-        signature::Signature,
         account::{AccountSharedData, ReadableAccount, WritableAccount},
         account_utils::StateMut,
         bpf_loader_upgradeable::{self, UpgradeableLoaderState},
@@ -30,6 +29,7 @@ use {
         },
         pubkey::Pubkey,
         rent::Rent,
+        signature::Signature,
         system_program,
         sysvar::instructions,
         transaction::TransactionError,
@@ -1467,11 +1467,26 @@ impl MessageProcessor {
                 .as_ref()
                 .map_or_else(Vec::new, |c| c.messages().to_vec());
 
-            account_dumper.transaction_executed(slot, first_signature, message, logs);
-
             let neon_ixs = message.instructions.iter().filter(|&ix| {
                 *ix.program_id(&message.account_keys) == crate::neon_evm_program::id()
             });
+
+            for (pre_account, (pubkey, account)) in pre_accounts.iter().zip(accounts) {
+                assert_eq!(pre_account.key(), pubkey);
+                let account = account.borrow();
+                let data_changed = pre_account.data().data().eq(account.data());
+                account_dumper.account_loaded(first_signature, &pre_account);
+                account_dumper.account_changed(first_signature, pubkey, &*account, data_changed);
+            }
+
+            use std::str::FromStr;
+            let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
+            let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent_collector.rent, 17,  &rent_key).unwrap();
+            let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
+            account_dumper.account_loaded(first_signature, &sysvar_rent);
+            account_dumper.account_changed(first_signature, &solana_sdk::sysvar::rent::id(), &rent_shared, true);
+
+            account_dumper.transaction_executed(slot, first_signature, message, logs);
             for neon_ix in neon_ixs {
                 // We rely on the fact that the ix account order is preserved during `visit_each_account`.
                 let mut sorted_pre_accounts = Vec::new();
@@ -1497,20 +1512,7 @@ impl MessageProcessor {
                     }
                 }
             }
-
-            for (pre_account, (pubkey, account)) in pre_accounts.into_iter().zip(accounts) {
-                assert_eq!(pre_account.key(), pubkey);
-                let account = account.borrow();
-                account_dumper.account_before_trx(first_signature, &pre_account);
-                account_dumper.account_after_trx(first_signature, pubkey, &*account);
-            }
-            
-            use std::str::FromStr;
-            let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
-            let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent_collector.rent, 17,  &rent_key).unwrap();
-            let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
-            account_dumper.account_before_trx(first_signature, &sysvar_rent);
-            account_dumper.account_after_trx(first_signature, &solana_sdk::sysvar::rent::id(), &rent_shared);
+            account_dumper.flush_transaction();
         }
 
         Ok(())

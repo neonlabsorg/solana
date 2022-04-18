@@ -3,7 +3,7 @@ set -euo pipefail
 
 REVISION=$(git rev-parse HEAD)
 
-docker build -t neonlabsorg/solana:${REVISION} .
+docker build --build-arg NEON_REVISION=ci-tracing-api-v0.5.1 -t neonlabsorg/solana:${REVISION} .
 
 #if [[ ${BUILDKITE_BRANCH} == "master" ]]; then
 #    BUILDTYPE="stable"
