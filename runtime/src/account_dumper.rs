@@ -319,16 +319,20 @@ impl AccountDumper {
         }
     }
 
-    pub fn account_before_trx(&self, first_signature: &Signature, account: &PreAccount) {
+    pub fn account_before_trx(
+        &self,
+        first_signature: &Signature,
+        shared_data: &AccountSharedData,
+    ) {
         let row = AccountsRow {
             date_time: db_now(),
             transaction_signature: DbSignature(*first_signature),
-            public_key: account.key().to_bytes(),
-            lamports: account.lamports(),
-            data: account.data().to_vec(),
-            owner: account.account().owner().to_bytes(),
-            executable: account.executable(),
-            rent_epoch: account.account().rent_epoch(),
+            public_key: key.to_bytes(),
+            lamports: shared_data.lamports(),
+            data: shared_data.data().to_vec(),
+            owner: shared_data.owner().to_bytes(),
+            executable: shared_data.executable(),
+            rent_epoch: shared_data.rent_epoch(),
         };
 
         log::debug!("account loaded: {:?}", row);
@@ -366,34 +370,34 @@ impl AccountDumper {
             .unwrap_or_else(|_| panic!("try_send failed"));
     }
 
-    pub fn transaction_executed(
-        &self,
-        slot: u64,
-        first_signature: &Signature,
-        message: &legacy::Message,
-        logs: Vec<String>,
-    ) {
-        let row = TransactionRow {
-            date_time: db_now(),
-            slot,
-            transaction_signature: DbSignature(*first_signature),
-            message: bincode::serialize(message).expect("serialize failed"),
-            logs,
-        };
-
-        log::debug!("transaction executed: {:?}", row);
-
-        self.message_tx
-            .try_send(Message::TransactionRow(row))
-            .unwrap_or_else(|_| panic!("try_send failed"));
-    }
+    // pub fn transaction_executed(
+    //     &self,
+    //     slot: u64,
+    //     first_signature: &Signature,
+    //     message: &legacy::Message,
+    //     logs: Vec<String>,
+    // ) {
+    //     let row = TransactionRow {
+    //         date_time: db_now(),
+    //         slot,
+    //         transaction_signature: DbSignature(*first_signature),
+    //         message: bincode::serialize(message).expect("serialize failed"),
+    //         logs,
+    //     };
+    //
+    //     log::debug!("transaction executed: {:?}", row);
+    //
+    //     self.message_tx
+    //         .try_send(Message::TransactionRow(row))
+    //         .unwrap_or_else(|_| panic!("try_send failed"));
+    // }
 
     pub fn evm_transaction_executed(
         &self,
         evm_ix: EvmInstruction,
         evm_ix_data: &[u8],
         first_signature: &Signature,
-        pre_accounts: Vec<&PreAccount>,
+        holder: Option<&AccountSharedData>,
     ) {
 
         let send = |from, signature, unsigned_msg| {
@@ -422,11 +426,9 @@ impl AccountDumper {
             }
             EvmInstruction::ExecuteTrxFromAccountDataIterativeOrContinue |
             EvmInstruction::ExecuteTrxFromAccountDataIterativeV02  => {
-                if let Some(pre_acc) = pre_accounts.get(0) {
-                    let holder_ref = pre_acc.account();
-                    let holder = holder_ref.data();
+                if let Some(acc) = holder {
 
-                    match get_transaction_from_holder(holder) {
+                    match get_transaction_from_holder(acc.data()) {
                         Ok((unsigned_msg, signature)) => {
                             match verify_tx_signature(signature, unsigned_msg){
                                 Ok(from) => {
