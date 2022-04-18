@@ -362,7 +362,7 @@ impl AccountDumper {
             .any(|program_id| self.program_ids.contains(program_id))
     }
 
-    pub fn account_before_trx(&self, first_signature: &Signature, account: &PreAccount) {
+    pub fn account_loaded(&self, first_signature: &Signature, account: &PreAccount) {
         let row = AccountsRow {
             date_time: db_now(),
             transaction_signature: DbSignature(*first_signature),
@@ -386,22 +386,29 @@ impl AccountDumper {
             .unwrap_or_else(|_| panic!("try_send failed"));
     }
 
-    pub fn account_after_trx(
+    pub fn account_changed(
         &self,
         first_signature: &Signature,
         key: &Pubkey,
         shared_data: &AccountSharedData,
+        data_changed: bool,
     ) {
         if !self.dump_after_transaction {
             return;
         }
+
+        let data = if data_changed {
+            shared_data.data().to_vec()
+        } else {
+            Vec::new()
+        };
 
         let row = AccountsRow {
             date_time: db_now(),
             transaction_signature: DbSignature(*first_signature),
             public_key: key.to_bytes(),
             lamports: shared_data.lamports(),
-            data: shared_data.data().to_vec(),
+            data,
             owner: shared_data.owner().to_bytes(),
             executable: shared_data.executable(),
             rent_epoch: shared_data.rent_epoch(),
