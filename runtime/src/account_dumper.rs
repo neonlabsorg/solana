@@ -45,6 +45,7 @@ struct BufInserterTask<T> {
     inserter: Inserter<T>,
 
     buffer: VecDeque<T>,
+    confirmations: VecDeque<oneshot::Sender<()>>,
     backoff: ExponentialBackoff,
     recovery: Option<usize>,
     recovery_delay: Pin<Box<OptionFuture<Sleep>>>,
@@ -68,6 +69,7 @@ impl<T: Row + Serialize + Send + Sync + 'static> BufInserterTask<T> {
             inserter,
             table,
             buffer: VecDeque::new(),
+            confirmations: VecDeque::new(),
             backoff,
             recovery: None,
             recovery_delay: Box::pin(None.into()),
@@ -108,6 +110,9 @@ impl<T: Row + Serialize + Send + Sync + 'static> BufInserterTask<T> {
                 if self.buffer.is_empty() {
                     if let Some(_idx) = self.recovery.take() {
                         log::info!("finished recovery for table {}", self.table);
+                        while let Some(sender) = self.confirmations.pop_front() {
+                            sender.send(()).unwrap();
+                        }
                     }
                 }
                 self.backoff.reset();
@@ -154,15 +159,22 @@ impl<T: Row + Serialize + Send + Sync + 'static> BufInserterTask<T> {
                         Command::Commit(sender) => {
                             let res = self.inserter.commit().await;
                             self.proccess_insert_result(res, true);
-                            sender.send(());
+                            if self.is_recovery() {
+                                self.confirmations.push_back(sender);
+                            } else {
+                                sender.send(()).unwrap();
+                            }
                         }
                     }
                 }
                 _ = &mut self.recovery_delay, if self.is_recovery() => {
                     if let Some(entry) = self.buffer.get(self.recovery.unwrap()) {
+                        log::debug!("recovery progressing");
                         self.recovery_delay.set(None.into());
                         let res = write_and_commit!(entry);
                         self.proccess_insert_result(res, false);
+                    } else {
+                        log::debug!("recovery: no entries in buffer");
                     }
                 }
                 _ = &mut self.commit_delay => {
@@ -254,6 +266,7 @@ enum Message {
     PruneRow(PruneRow),
     TransactionRow(TransactionRow),
     EvmTransactionRow(EvmTransactionRow),
+    Commit,
 }
 
 #[derive(Debug)]
@@ -320,10 +333,19 @@ impl AccountDumper {
                     transactions_inserter.insert(row).await;
                 }
                 Message::EvmTransactionRow(row) => {
-                    accounts_inserter.commit().await;
-                    transactions_inserter.commit().await;
                     evm_transactions_inserter.insert(row).await;
+                }
+                Message::Commit => {
+                    log::debug!("commit started");
+                    accounts_inserter.commit().await;
+                    log::debug!("accounts committed");
+                    accounts_after_transaction_inserter.commit().await;
+                    log::debug!("accounts after committed");
+                    transactions_inserter.commit().await;
+                    log::debug!("transactions committed");
                     evm_transactions_inserter.commit().await;
+                    log::debug!("evm transactions committed");
+                    log::debug!("commit finished");
                 }
             }
         }
@@ -351,7 +373,12 @@ impl AccountDumper {
             rent_epoch: account.data().rent_epoch(),
         };
 
-        log::debug!("account loaded: {:?}", row);
+        log::debug!(
+            "[{}] account loaded: {} {:?}",
+            first_signature,
+            account.key(),
+            row
+        );
 
         self.message_tx
             .try_send(Message::AccountsRow(row))
@@ -386,10 +413,16 @@ impl AccountDumper {
             rent_epoch: shared_data.rent_epoch(),
         };
 
-        log::debug!("account changed: {:?}", row);
+        log::debug!("[{}] account changed: {} {:?}", first_signature, key, row);
 
         self.message_tx
             .try_send(Message::AccountsRowAfterTransaction(row))
+            .unwrap_or_else(|_| panic!("try_send failed"));
+    }
+
+    pub fn flush_transaction(&self) {
+        self.message_tx
+            .try_send(Message::Commit)
             .unwrap_or_else(|_| panic!("try_send failed"));
     }
 
@@ -408,7 +441,7 @@ impl AccountDumper {
             logs,
         };
 
-        log::debug!("transaction executed: {:?}", row);
+        log::debug!("[{}] transaction executed: {:?}", first_signature, row);
 
         self.message_tx
             .try_send(Message::TransactionRow(row))
@@ -434,6 +467,12 @@ impl AccountDumper {
                 sign,
                 ..
             } => {
+                log::debug!(
+                    "[{}] Call from raw! msg: {:?} sign: {:?}",
+                    first_signature,
+                    unsigned_msg,
+                    sign
+                );
                 let row = construct_tx_row(
                     H160::from_slice(from_addr),
                     unsigned_msg,
@@ -442,7 +481,12 @@ impl AccountDumper {
                 );
 
                 //eprintln!("NEON unsigned: {:?} sign: {:?} hash {:?}", unsigned_msg, sign, keccak::hash(&encoded).encode_hex::<String>());
-                log::debug!("evm transaction executed: {:?}", row);
+                log::debug!(
+                    "[{}] evm transaction executed: {} from: {}",
+                    first_signature,
+                    row.eth_transaction_signature,
+                    hex::encode(row.eth_from_addr),
+                );
 
                 self.message_tx
                     .try_send(Message::EvmTransactionRow(row))
@@ -452,7 +496,12 @@ impl AccountDumper {
             | EvmInstruction::ExecuteTrxFromAccountDataIterativeV02 { .. } => {
                 match extract_evm_tx_data(pre_accounts, first_signature) {
                     Ok(row) => {
-                        log::debug!("evm transaction executed: {:?}", row);
+                        log::debug!(
+                            "[{}] evm transaction executed: {} from: {}",
+                            first_signature,
+                            row.eth_transaction_signature,
+                            hex::encode(row.eth_from_addr),
+                        );
 
                         self.message_tx
                             .try_send(Message::EvmTransactionRow(row))
@@ -462,7 +511,11 @@ impl AccountDumper {
                 }
             }
             _ => {
-                log::warn!("unhandled neon instruction {:?}", instruction);
+                log::warn!(
+                    "[{}] unhandled neon instruction {:?}",
+                    first_signature,
+                    instruction
+                );
             }
         }
     }
@@ -491,6 +544,11 @@ fn construct_tx_row(
         signature: eth_signature,
     };
     let encoded = rlp::encode(&signed);
+    log::debug!(
+        "encoded signed transaction: {:?} unsigned: {:?}",
+        encoded,
+        msg
+    );
 
     EvmTransactionRow {
         date_time: db_now(),
@@ -651,6 +709,13 @@ impl Serialize for DbSignature {
     serde::Serialize, serde::Deserialize, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug,
 )]
 struct EthSignature(GenericArray<u8, U64>);
+
+impl std::fmt::Display for EthSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = std::str::from_utf8(&self.0).unwrap();
+        write!(f, "{}", s)
+    }
+}
 
 impl EthSignature {
     fn new(sign: &[u8]) -> Self {

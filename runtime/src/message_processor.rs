@@ -1502,6 +1502,7 @@ impl MessageProcessor {
                     }
                 }
             }
+            account_dumper.flush_transaction();
         }
 
         Ok(())
