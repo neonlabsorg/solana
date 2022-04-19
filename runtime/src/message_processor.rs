@@ -1,8 +1,6 @@
 use crate::account_dumper::AccountDumper;
-use solana_program_runtime::{pre_account::PreAccount};
-use evm_loader::instruction::EvmInstruction;
 use {
-    log::*,
+    // log::*,
     serde::{Deserialize, Serialize},
     solana_measure::measure::Measure,
     solana_program_runtime::{
@@ -17,17 +15,16 @@ use {
         timings::ExecuteTimings,
     },
     solana_sdk::{
-        account::{AccountSharedData, WritableAccount},
+        account::{WritableAccount},
         feature_set::{prevent_calling_precompiles_as_programs, FeatureSet},
         hash::Hash,
-        message::{SanitizedMessage, legacy},
+        message::{SanitizedMessage},
         precompiles::is_precompile,
         rent::Rent,
         saturating_add_assign,
         sysvar::instructions,
         transaction::TransactionError,
         signature::Signature,
-        pubkey::Pubkey,
     },
     std::{borrow::Cow, cell::RefCell, rc::Rc, sync::Arc},
 };
@@ -79,62 +76,80 @@ impl MessageProcessor {
         current_accounts_data_len: u64,
         first_signature: &Signature,
         account_dumper: Option<&Arc<AccountDumper>>,
-        slot: u64,
+        _slot: u64,
     ) -> Result<ProcessedMessageInfo, TransactionError> {
 
-        let mut dump_acc = |program_id, ix, func| {
-            if program_id == crate::neon_evm_program::id() {
-                let mut dump = |_, idx| {
-                    let acc  =  accounts.iter()
-                        .map(|(_key, data)| &*data.borrow()).nth(idx)?;
 
-                    func(first_signature, acc);
-                    Ok(())
-                };
-                ix.visit_each_account(&mut dump);
-            }
-        };
+        // let mut dump_acc =
+        //     |program_id: &Pubkey,
+        //      ix: &CompiledInstruction,
+        //      dumper: &AccountDumper,
+        //      func: fn(&AccountDumper, &Signature, &Pubkey, &AccountSharedData) -> ()| {
+        //     if *program_id == crate::neon_evm_program::id() {
+        //         let mut dump = |_, idx| {
+        //             let (key, acc)  =  accounts.iter()
+        //                 .map(|(key, data)| (key, &*data.borrow())).nth(idx).unwrap();
+        //
+        //             func(dumper,first_signature, key, acc);
+        //             Ok(())
+        //         };
+        //         ix.visit_each_account(&mut dump);
+        //     }
+        // };
+        //
+        // let mut dump_acc_before = |program_id: &Pubkey, ix: &CompiledInstruction, dumper: &AccountDumper| {
+        //     dump_acc(program_id, ix, dumper, AccountDumper::account_before_trx)
+        // };
+        //
+        // let mut dump_acc_after = |program_id: &Pubkey, ix: &CompiledInstruction, dumper: &AccountDumper| {
+        //     dump_acc(program_id, ix, dumper, AccountDumper::account_after_trx)
+        // };
 
-        let mut dump_acc_before = |program_id, ix| { dump_acc(program_id, ix,account_dumper.account_before_trx)};
-        let mut dump_acc_after = |program_id, ix| { dump_acc(program_id, ix,account_dumper.account_after_trx)};
-        let dump_evm_ix = |program_id, ix| {
-            if program_id == crate::neon_evm_program::id() {
+        // let dump_evm_ix = |program_id: &Pubkey, ix: CompiledInstruction, dumper: &AccountDumper| {
+        //     if *program_id == crate::neon_evm_program::id() {
+        //
+        //         let holder_idx = ix.accounts.get(0).unwrap() as usize;
+        //         let holder  =  accounts.iter()
+        //             .map(|(_key, data)| &*data.borrow()).nth(holder_idx);
+        //
+        //         let (tag, evm_ix_data) = ix.data.split_first().unwrap();
+        //
+        //         match EvmInstruction::parse(tag) {
+        //             Ok(evm_ix) => AccountDumper::evm_transaction_executed(
+        //                 dumper,
+        //                 evm_ix,
+        //                 evm_ix_data,
+        //                 first_signature,
+        //                 holder,
+        //             ),
+        //             Err(err) => {
+        //                 error!("failed to parse evm instruction {:?}", err);
+        //             }
+        //         }
+        //     }
+        // };
 
-                let holder  =  accounts.iter()
-                    .map(|(_key, data)| &*data.borrow()).nth(ix.accounts.get(0));
 
-                let (tag, evm_ix_data) = ix.data.split_first().unwrap();
+        // let dump_rent = ||{
+        //     let evm_found = message.program_instructions_iter()
+        //         .any(|(key, _)| {*key == crate::neon_evm_program::id()});
+        //     if evm_found {
+        //         use std::str::FromStr;
+        //         let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
+        //         let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent, 17,  &rent_key).unwrap();
+        //         let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
+        //         account_dumper.account_before_trx(first_signature, &sysvar_rent);
+        //         account_dumper.account_after_trx(first_signature, &solana_sdk::sysvar::rent::id(), &rent_shared);
+        //     }
+        // };
+        let account_dumper = account_dumper.filter(|dumper| dumper.check_transaction(message));
 
-                match EvmInstruction::parse(tag) {
-                    Ok(evm_ix) => account_dumper.evm_transaction_executed(
-                        evm_ix,
-                        evm_ix_data,
-                        first_signature,
-                        holder,
-                    ),
-                    Err(err) => {
-                        error!("failed to parse evm instruction {:?}", err);
-                    }
-                }
-            }
-        };
-        let dump_rent = ||{
-            let evm_found = message.program_instructions_iter()
-                .any(|(key, _)| {key == crate::neon_evm_program::id()});
-            if evm_found {
-                use std::str::FromStr;
-                let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
-                let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent, 17,  &rent_key).unwrap();
-                let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
-                account_dumper.account_before_trx(first_signature, &sysvar_rent);
-                account_dumper.account_after_trx(first_signature, &solana_sdk::sysvar::rent::id(), &rent_shared);
-            }
-        };
-        dump_rent();
 
-        let logs = log_collector
-            .as_ref()
-            .map_or_else(Vec::new, |c| c.borrow().get_recorded_content().to_vec());
+        account_dumper.map(|dumper| {dumper.dump_rent_account(message, first_signature, &rent)});
+
+        // let logs = log_collector
+        //     .as_ref()
+        //     .map_or_else(Vec::new, |c| c.borrow().get_recorded_content().to_vec());
 
         let mut invoke_context = InvokeContext::new(
             rent,
@@ -184,8 +199,8 @@ impl MessageProcessor {
                 }
             }
 
-            dump_acc_before(program_id, instruction);
-            dump_evm_ix(program_id, instruction);
+            account_dumper.map(|dumper| {dumper.dump_accounts_before(program_id, instruction, accounts, first_signature)});
+            account_dumper.map(|dumper| {dumper.dump_evm_instruction(program_id, instruction, accounts, first_signature)});
 
             let mut time = Measure::start("execute_instruction");
 
@@ -217,7 +232,7 @@ impl MessageProcessor {
                 instruction_trace.append(invoke_context.get_instruction_trace_mut());
                 TransactionError::InstructionError(instruction_index as u8, err)
             })?;
-            dump_acc_after(program_id, instruction);
+            account_dumper.map(|dumper| {dumper.dump_accounts_after(program_id, instruction, accounts, first_signature)});
         }
         instruction_trace.append(invoke_context.get_instruction_trace_mut());
 

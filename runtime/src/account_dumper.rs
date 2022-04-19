@@ -1,13 +1,13 @@
 use crate::evm_instruction::{verify_tx_signature, SignedTransaction, UnsignedTransaction};
-use solana_program_runtime::pre_account::PreAccount;
 use evm::H160;
 use solana_sdk::account::ReadableAccount;
 use solana_sdk::clock::Slot;
 use solana_sdk::secp256k1_recover::Secp256k1RecoverError;
 use solana_sdk::{
-    account::AccountSharedData, keccak, message::Message as SolanaMessage, pubkey::Pubkey,
+    account::AccountSharedData, keccak,  pubkey::Pubkey,
     signature::Signature,
-    message::{SanitizedMessage, legacy}
+    message::{SanitizedMessage},
+    rent::Rent,
 };
 
 use backoff::{backoff::Backoff, ExponentialBackoff};
@@ -35,6 +35,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use arrayref::{array_ref};
+use solana_sdk::instruction::{CompiledInstruction};
+use solana_program_runtime::invoke_context::TransactionAccountRefCell;
+
 
 pub const DEFAULT_DB_URL: &'static str = "http://localhost:8123/";
 const DEFAULT_COMMIT_EVERY: Duration = Duration::from_secs(10); // Same as clickhouse crate
@@ -301,27 +304,13 @@ impl AccountDumper {
     }
 
     pub fn check_transaction(&self, message: &SanitizedMessage) -> bool {
-        match message {
-            SanitizedMessage::Legacy(legasy) => {
-                legasy
-                    .instructions
-                    .iter()
-                    .filter_map(|ix| legasy.account_keys.get(usize::from(ix.program_id_index)))
-                    .any(|program_id| self.program_ids.contains(program_id))
-            },
-            SanitizedMessage::V0(loaded) => {
-                loaded.message
-                    .instructions
-                    .iter()
-                    .filter_map(|ix| loaded.account_keys.get(usize::from(ix.program_id_index)))
-                    .any(|program_id| self.program_ids.contains(program_id))
-            }
-        }
+        message.program_instructions_iter().any(|(program_id, _)| self.program_ids.contains(program_id))
     }
 
-    pub fn account_before_trx(
+    fn account_before_trx(
         &self,
         first_signature: &Signature,
+        key: &Pubkey,
         shared_data: &AccountSharedData,
     ) {
         let row = AccountsRow {
@@ -342,7 +331,7 @@ impl AccountDumper {
             .unwrap_or_else(|_| panic!("try_send failed"));
     }
 
-    pub fn account_after_trx(
+    fn account_after_trx(
         &self,
         first_signature: &Signature,
         key: &Pubkey,
@@ -397,7 +386,7 @@ impl AccountDumper {
         evm_ix: EvmInstruction,
         evm_ix_data: &[u8],
         first_signature: &Signature,
-        holder: Option<&AccountSharedData>,
+        holder: Option<AccountSharedData>,
     ) {
 
         let send = |from, signature, unsigned_msg| {
@@ -456,6 +445,98 @@ impl AccountDumper {
             .try_send(Message::PruneRow(row))
             .unwrap_or_else(|_| panic!("try_send failed"))
     }
+
+    fn dump_accounts (
+        &self,
+        program_id: &Pubkey,
+        ix: &CompiledInstruction,
+        accounts: &[TransactionAccountRefCell],
+        first_signature: &Signature,
+        func: fn(&AccountDumper, &Signature, &Pubkey, &AccountSharedData) -> ()
+    ){
+        if *program_id == crate::neon_evm_program::id() {
+            let mut dump = |_, idx| {
+                let (key, acc)  =  accounts.iter()
+                    .map(|(key, data)| {
+                        let acc = data.borrow().clone();
+                        (key, acc)
+                    }).nth(idx).unwrap();
+                func(self,first_signature, key, &acc);
+                Ok(())
+            };
+            ix.visit_each_account(&mut dump);
+        }
+    }
+
+    pub fn dump_accounts_before(
+        &self,
+        program_id: &Pubkey,
+        ix: &CompiledInstruction,
+        accounts: &[TransactionAccountRefCell],
+        first_signature: &Signature,
+    ){
+        self.dump_accounts(program_id, ix, accounts,first_signature, AccountDumper::account_before_trx)
+    }
+
+    pub fn dump_accounts_after(
+        &self,
+        program_id: &Pubkey,
+        ix: &CompiledInstruction,
+        accounts: &[TransactionAccountRefCell],
+        first_signature: &Signature,
+    ){
+        self.dump_accounts(program_id, ix, accounts, first_signature,AccountDumper::account_after_trx)
+    }
+
+    pub fn dump_evm_instruction(
+        &self,
+        program_id: &Pubkey,
+        ix: &CompiledInstruction,
+        accounts: &[TransactionAccountRefCell],
+        first_signature: &Signature,
+    ){
+        if *program_id == crate::neon_evm_program::id() {
+            let holder_idx = *ix.accounts.get(0).unwrap() as usize;
+            let holder  =  accounts.iter()
+                .map(|(_key, data)|{
+                    let acc = data.borrow().clone();
+                    acc
+                }).nth(holder_idx);
+
+            let (tag, evm_ix_data) = ix.data.split_first().unwrap();
+
+            match EvmInstruction::parse(tag) {
+                Ok(evm_ix) => self.evm_transaction_executed(
+                    evm_ix,
+                    evm_ix_data,
+                    first_signature,
+                    holder,
+                ),
+                Err(err) => {
+                    log::error!("failed to parse evm instruction {:?}", err);
+                }
+            }
+        }
+    }
+
+    pub fn dump_rent_account(
+        &self,
+        message: &SanitizedMessage,
+        first_signature: &Signature,
+        rent: &Rent
+    ){
+        let evm_found = message.program_instructions_iter()
+            .any(|(key, _)| {*key == crate::neon_evm_program::id()});
+        if evm_found {
+            use std::str::FromStr;
+            let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
+            let rent_shared = AccountSharedData::new_data_with_space(1009200, rent, 17,  &rent_key).unwrap();
+            self.account_before_trx(first_signature, &rent_key, &rent_shared);
+            self.account_after_trx(first_signature, &rent_key, &rent_shared);
+        }
+
+    }
+
 }
 
 fn construct_tx_row(
