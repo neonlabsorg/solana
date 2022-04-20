@@ -6,7 +6,7 @@ use solana_sdk::secp256k1_recover::Secp256k1RecoverError;
 use solana_sdk::{
     account::AccountSharedData, keccak,  pubkey::Pubkey,
     signature::Signature,
-    message::{SanitizedMessage},
+    message::{SanitizedMessage, legacy},
     rent::Rent,
 };
 
@@ -359,29 +359,44 @@ impl AccountDumper {
             .unwrap_or_else(|_| panic!("try_send failed"));
     }
 
-    // pub fn transaction_executed(
-    //     &self,
-    //     slot: u64,
-    //     first_signature: &Signature,
-    //     message: &legacy::Message,
-    //     logs: Vec<String>,
-    // ) {
-    //     let row = TransactionRow {
-    //         date_time: db_now(),
-    //         slot,
-    //         transaction_signature: DbSignature(*first_signature),
-    //         message: bincode::serialize(message).expect("serialize failed"),
-    //         logs,
-    //     };
-    //
-    //     log::debug!("transaction executed: {:?}", row);
-    //
-    //     self.message_tx
-    //         .try_send(Message::TransactionRow(row))
-    //         .unwrap_or_else(|_| panic!("try_send failed"));
-    // }
+    // TODO: remove method
+    pub fn dump_message(
+        &self,
+        slot: u64,
+        first_signature: &Signature,
+        message: &SanitizedMessage,
+        logs: Vec<String>,
+    ) {
 
-    pub fn evm_transaction_executed(
+        //  TODO: it is not correct
+        let legacy_message = match message{
+            SanitizedMessage::Legacy(legacy) => legacy.clone(),
+            SanitizedMessage::V0(loaded) => {
+                legacy::Message{
+                    header: loaded.message.header.clone(),
+                    account_keys: loaded.message.account_keys.clone(),
+                    recent_blockhash: loaded.message.recent_blockhash,
+                    instructions: loaded.message.instructions.clone()
+                }
+            }
+        };
+
+        let row = TransactionRow {
+            date_time: db_now(),
+            slot,
+            transaction_signature: DbSignature(*first_signature),
+            message: bincode::serialize(&legacy_message).expect("serialize failed"),
+            logs,
+        };
+
+        log::debug!("transaction executed: {:?}", row);
+
+        self.message_tx
+            .try_send(Message::TransactionRow(row))
+            .unwrap_or_else(|_| panic!("try_send failed"));
+    }
+
+    fn evm_transaction_executed(
         &self,
         evm_ix: EvmInstruction,
         evm_ix_data: &[u8],

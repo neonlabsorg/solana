@@ -76,11 +76,17 @@ impl MessageProcessor {
         current_accounts_data_len: u64,
         first_signature: &Signature,
         account_dumper: Option<&Arc<AccountDumper>>,
-        _slot: u64,
+        slot: u64,
     ) -> Result<ProcessedMessageInfo, TransactionError> {
 
         let account_dumper = account_dumper.filter(|dumper| dumper.check_transaction(message));
         account_dumper.map(|dumper| {dumper.dump_rent_account(message, first_signature, &rent)});
+
+        let logs = log_collector
+            .as_ref()
+            .map_or_else(Vec::new, |c| c.borrow().get_recorded_content().to_vec());
+        // TODO: remove message dumping
+        account_dumper.map(|dumper| {dumper.dump_message(slot, first_signature, message, logs)});
 
         let mut invoke_context = InvokeContext::new(
             rent,
