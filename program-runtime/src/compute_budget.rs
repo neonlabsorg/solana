@@ -67,6 +67,8 @@ pub struct ComputeBudget {
     pub alt_bn128_multiplication_cost: u64,
     /// Number of compute units consumed to call alt_bn128_pairing.
     pub alt_bn128_pairing_cost: u64,
+    /// Number of compute units consumed to call big_mod_exp.
+    pub big_mod_exp_cost: u64,
 }
 
 impl Default for ComputeBudget {
@@ -105,6 +107,7 @@ impl ComputeBudget {
             alt_bn128_addition_cost: 500,
             alt_bn128_multiplication_cost: 40_000,
             alt_bn128_pairing_cost: 200_000,
+            big_mod_exp_cost: 200_000,
         }
     }
 

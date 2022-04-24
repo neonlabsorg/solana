@@ -19,13 +19,13 @@ use {
         account::{AccountSharedData, ReadableAccount, WritableAccount},
         account_info::AccountInfo,
         alt_bn128::prelude::*,
+        big_mod_exp::prelude::*,
         blake3, bpf_loader, bpf_loader_deprecated, bpf_loader_upgradeable,
         entrypoint::{BPF_ALIGN_OF_U128, MAX_PERMITTED_DATA_INCREASE, SUCCESS},
         feature_set::{
-            add_get_processed_sibling_instruction_syscall, alt_bn128_addition_syscall_enabled,
-            alt_bn128_multiplication_syscall_enabled, alt_bn128_pairing_syscall_enabled,
-            blake3_syscall_enabled, disable_fees_sysvar, do_support_realloc,
-            fixed_memcpy_nonoverlapping_check, libsecp256k1_0_5_upgrade_enabled,
+            add_get_processed_sibling_instruction_syscall, alt_bn128_syscall_enabled,
+            big_mod_exp_syscall_enabled, blake3_syscall_enabled, disable_fees_sysvar,
+            do_support_realloc, fixed_memcpy_nonoverlapping_check, libsecp256k1_0_5_upgrade_enabled,
             prevent_calling_precompiles_as_programs, return_data_syscall_enabled,
             secp256k1_recover_syscall_enabled, sol_log_data_syscall_enabled,
             update_syscall_base_costs,
@@ -195,24 +195,20 @@ pub fn register_syscalls(
     // Memory allocator
     syscall_registry.register_syscall_by_name(b"sol_alloc_free_", SyscallAllocFree::call)?;
 
-    // alt_bn128_addition
-    if invoke_context.feature_set.is_active(&alt_bn128_addition_syscall_enabled::id()) {
+    // alt_bn128
+    if invoke_context.feature_set.is_active(&alt_bn128_syscall_enabled::id()) {
         syscall_registry
             .register_syscall_by_name(b"sol_alt_bn128_addition", SyscallAltBn128Addition::call)?;
-    }
-
-    // alt_bn128_multiplication
-    if invoke_context.feature_set.is_active(&alt_bn128_multiplication_syscall_enabled::id()) {
-        syscall_registry.register_syscall_by_name(
-            b"sol_alt_bn128_multiplication",
-            SyscallAltBn128Multiplication::call,
-        )?;
-    }
-
-    // alt_bn128_pairing
-    if invoke_context.feature_set.is_active(&alt_bn128_pairing_syscall_enabled::id()) {
+        syscall_registry
+            .register_syscall_by_name(b"sol_alt_bn128_multiplication", SyscallAltBn128Multiplication::call)?;
         syscall_registry
             .register_syscall_by_name(b"sol_alt_bn128_pairing", SyscallAltBn128Pairing::call)?;
+    }
+
+    // big_mod_exp
+    if invoke_context.feature_set.is_active(&big_mod_exp_syscall_enabled::id()) {
+        syscall_registry
+            .register_syscall_by_name(b"sol_big_mod_exp", SyscallBigModExp::call)?;
     }
 
     // Return data
@@ -281,15 +277,13 @@ pub fn bind_syscall_context_objects<'a, 'b>(
         .feature_set
         .is_active(&secp256k1_recover_syscall_enabled::id());
 
-    let is_alt_bn128_addition_syscall_active = invoke_context
+    let is_alt_bn128_syscall_active = invoke_context
         .feature_set
-        .is_active(&alt_bn128_addition_syscall_enabled::id());
-    let is_alt_bn128_multiplication_syscall_active = invoke_context
+        .is_active(&alt_bn128_syscall_enabled::id());
+
+    let is_big_mod_exp_syscall_active = invoke_context
         .feature_set
-        .is_active(&alt_bn128_multiplication_syscall_enabled::id());
-    let is_alt_bn128_pairing_syscall_active = invoke_context
-        .feature_set
-        .is_active(&alt_bn128_pairing_syscall_enabled::id());
+        .is_active(&big_mod_exp_syscall_enabled::id());
 
     let is_fee_sysvar_via_syscall_active = !invoke_context
         .feature_set
@@ -410,29 +404,38 @@ pub fn bind_syscall_context_objects<'a, 'b>(
         }),
     );
 
-    // alt_bn128_addition
+    // alt_bn128 addition
     bind_feature_gated_syscall_context_object!(
         vm,
-        is_alt_bn128_addition_syscall_active,
+        is_alt_bn128_syscall_active,
         Box::new(SyscallAltBn128Addition {
             invoke_context: invoke_context.clone(),
         }),
     );
 
-    // alt_bn128_multiplication
+    // alt_bn128 multiplication
     bind_feature_gated_syscall_context_object!(
         vm,
-        is_alt_bn128_multiplication_syscall_active,
+        is_alt_bn128_syscall_active,
         Box::new(SyscallAltBn128Multiplication {
             invoke_context: invoke_context.clone(),
         }),
     );
 
-    // alt_bn128_pairing
+    // alt_bn128 pairing
     bind_feature_gated_syscall_context_object!(
         vm,
-        is_alt_bn128_pairing_syscall_active,
+        is_alt_bn128_syscall_active,
         Box::new(SyscallAltBn128Pairing {
+            invoke_context: invoke_context.clone(),
+        }),
+    );
+
+    // big_mod_exp
+    bind_feature_gated_syscall_context_object!(
+        vm,
+        is_big_mod_exp_syscall_active,
+        Box::new(SyscallBigModExp {
             invoke_context: invoke_context.clone(),
         }),
     );
@@ -1895,7 +1898,7 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallAltBn128Addition<'a, 'b> {
                 .map_err(|_| SyscallError::InvokeContextBorrowFailed),
             result
         );
-        let cost = invoke_context.get_compute_budget().secp256k1_recover_cost;
+        let cost = invoke_context.get_compute_budget().alt_bn128_addition_cost;
         question_mark!(invoke_context.get_compute_meter().consume(cost), result);
 
         let loader_id = question_mark!(
@@ -1958,7 +1961,7 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallAltBn128Multiplication<'a, 'b> {
                 .map_err(|_| SyscallError::InvokeContextBorrowFailed),
             result
         );
-        let cost = invoke_context.get_compute_budget().secp256k1_recover_cost;
+        let cost = invoke_context.get_compute_budget().alt_bn128_multiplication_cost;
         question_mark!(invoke_context.get_compute_meter().consume(cost), result);
 
         let loader_id = question_mark!(
@@ -2022,7 +2025,7 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallAltBn128Pairing<'a, 'b> {
                 .map_err(|_| SyscallError::InvokeContextBorrowFailed),
             result
         );
-        let cost = invoke_context.get_compute_budget().secp256k1_recover_cost;
+        let cost = invoke_context.get_compute_budget().alt_bn128_pairing_cost;
         question_mark!(invoke_context.get_compute_meter().consume(cost), result);
 
         let loader_id = question_mark!(
@@ -2059,6 +2062,75 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallAltBn128Pairing<'a, 'b> {
         }
 
         call_result.copy_from_slice(&result_point);
+        *result = Ok(SUCCESS);
+    }
+}
+
+/// big_mod_exp
+pub struct SyscallBigModExp<'a, 'b> {
+    invoke_context: Rc<RefCell<&'a mut InvokeContext<'b>>>,
+}
+
+impl<'a, 'b> SyscallObject<BpfError> for SyscallBigModExp<'a, 'b> {
+    fn call(
+        &mut self,
+        input_addr: u64,
+        input_size: u64,
+        result_addr: u64,
+        _arg4: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        let invoke_context = question_mark!(
+            self.invoke_context
+                .try_borrow()
+                .map_err(|_| SyscallError::InvokeContextBorrowFailed),
+            result
+        );
+        let cost = invoke_context.get_compute_budget().big_mod_exp_cost;
+        question_mark!(invoke_context.get_compute_meter().consume(cost), result);
+
+        let loader_id = question_mark!(
+            invoke_context
+                .get_loader()
+                .map_err(SyscallError::InstructionError),
+            result
+        );
+        let input = question_mark!(
+            translate_slice::<u8>(memory_mapping, input_addr, input_size, &loader_id),
+            result
+        );
+
+        let (mod_len, result_buffer) = match big_mod_exp(input) {
+            Ok((mod_len_buffer, result_buffer)) => (mod_len_buffer, result_buffer),
+            Err(e) => {
+                *result = Ok(e.into());
+                return;
+            }
+        };
+
+        if mod_len > MAX_BIG_MOD_EXP_OUTPUT_LEN {
+            *result = Ok(BigModExpError::ModulusTooBig.into());
+            return;
+        }
+
+        if result_buffer.len() > MAX_BIG_MOD_EXP_OUTPUT_LEN as usize {
+            *result = Ok(BigModExpError::ResultTooBig.into());
+            return;
+        }
+
+        let call_result = question_mark!(
+            translate_slice_mut::<u8>(
+                memory_mapping,
+                result_addr,
+                mod_len as u64,
+                &loader_id,
+            ),
+            result
+        );
+
+        call_result.copy_from_slice(&result_buffer);
         *result = Ok(SUCCESS);
     }
 }
