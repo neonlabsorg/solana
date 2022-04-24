@@ -1,6 +1,6 @@
 #pragma once
 /**
- * @brief Solana Blake3 system call
+ * @brief Solana altBn128 system calls
  */
 
 #include <sol/types.h>
