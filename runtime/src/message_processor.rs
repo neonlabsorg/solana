@@ -244,9 +244,8 @@ impl MessageProcessor {
             let sysvar_clock = PreAccount::new(&solana_sdk::sysvar::clock::id(),  &clock_shared);
             account_dumper.account_before_trx(first_signature, &sysvar_clock);
             account_dumper.account_after_trx(first_signature, &solana_sdk::sysvar::clock::id(), &clock_shared);
+            account_dumper.flush_transaction();
         }
-
-        account_dumper.flush_transaction();
 
         Ok(ProcessedMessageInfo {
             accounts_data_len_delta: invoke_context.get_accounts_data_meter().delta(),
