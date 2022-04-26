@@ -5,8 +5,6 @@ pub mod prelude {
 }
 
 use {
-    borsh::{BorshDeserialize, BorshSchema, BorshSerialize},
-    core::convert::TryFrom,
     thiserror::Error,
 };
 
@@ -22,8 +20,6 @@ use consts::*;
 //---- Constants
 
 mod consts {
-    use static_assertions::const_assert_eq;
-
     /// Minimum input length for the big_mod_exp.
     pub const BIG_MOD_EXP_MIN_INPUT_LEN: usize = 96;
 
@@ -100,7 +96,7 @@ pub fn big_mod_exp(input: &[u8]) -> Result<(u16, Vec<u8>), BigModExpError> {
         if input.len() < BIG_MOD_EXP_MIN_INPUT_LEN {
             return Err(BigModExpError::InvalidInputData);
         }
-        let mut input = input.to_vec();
+        let input = input.to_vec();
 
         let (base_len, rest) = input.split_at(32);
         let (exp_len, rest) = rest.split_at(32);
