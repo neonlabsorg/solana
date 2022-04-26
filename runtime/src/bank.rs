@@ -3980,6 +3980,7 @@ impl Bank {
             &tx.signature(),
             account_dumper,
             self.slot,
+            Some(self.clock()),
         );
         process_message_time.stop();
         saturating_add_assign!(

@@ -23,6 +23,7 @@ use {
         message::{SanitizedMessage, legacy},
         precompiles::is_precompile,
         rent::Rent,
+        clock::Clock,
         saturating_add_assign,
         sysvar::instructions,
         transaction::TransactionError,
@@ -80,6 +81,7 @@ impl MessageProcessor {
         first_signature: &Signature,
         account_dumper: Option<&Arc<AccountDumper>>,
         slot: u64,
+        clock_opt: Option<Clock>,
     ) -> Result<ProcessedMessageInfo, TransactionError> {
 
         let dump_job = account_dumper
@@ -230,11 +232,18 @@ impl MessageProcessor {
             }
 
             use std::str::FromStr;
-            let rent_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
-            let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent, 17,  &rent_key).unwrap();
+            let sysvar_key = Pubkey::from_str("Sysvar1111111111111111111111111111111111111").unwrap();
+
+            let rent_shared = AccountSharedData::new_data_with_space(1009200, &rent, 17,  &sysvar_key).unwrap();
             let sysvar_rent = PreAccount::new(&solana_sdk::sysvar::rent::id(),  &rent_shared);
             account_dumper.account_before_trx(first_signature, &sysvar_rent);
             account_dumper.account_after_trx(first_signature, &solana_sdk::sysvar::rent::id(), &rent_shared);
+
+            let clock = clock_opt.unwrap_or(Clock::default());
+            let clock_shared = AccountSharedData::new_data_with_space(1009200, &clock, 17,  &sysvar_key).unwrap();
+            let sysvar_clock = PreAccount::new(&solana_sdk::sysvar::clock::id(),  &clock_shared);
+            account_dumper.account_before_trx(first_signature, &sysvar_clock);
+            account_dumper.account_after_trx(first_signature, &solana_sdk::sysvar::clock::id(), &clock_shared);
         }
 
 
@@ -577,6 +586,7 @@ mod tests {
             Hash::default(),
             0,
             0,
+            None,
         );
         assert_eq!(
             result,
@@ -700,6 +710,7 @@ mod tests {
             Hash::default(),
             0,
             0,
+            None,
         );
         assert_eq!(
             result,
