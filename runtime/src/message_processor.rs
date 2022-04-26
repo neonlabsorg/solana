@@ -240,12 +240,13 @@ impl MessageProcessor {
             account_dumper.account_after_trx(first_signature, &solana_sdk::sysvar::rent::id(), &rent_shared);
 
             let clock = clock_opt.unwrap_or(Clock::default());
-            let clock_shared = AccountSharedData::new_data_with_space(1009200, &clock, 17,  &sysvar_key).unwrap();
+            let clock_shared = AccountSharedData::new_data_with_space(1009200, &clock, 40,  &sysvar_key).unwrap();
             let sysvar_clock = PreAccount::new(&solana_sdk::sysvar::clock::id(),  &clock_shared);
             account_dumper.account_before_trx(first_signature, &sysvar_clock);
             account_dumper.account_after_trx(first_signature, &solana_sdk::sysvar::clock::id(), &clock_shared);
         }
 
+        account_dumper.flush_transaction();
 
         Ok(ProcessedMessageInfo {
             accounts_data_len_delta: invoke_context.get_accounts_data_meter().delta(),
