@@ -22,6 +22,7 @@ use hex::ToHex;
 use serde::{Serialize, Serializer};
 use thiserror::Error;
 use tokio::runtime;
+use tokio::sync::oneshot;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Sleep};
@@ -37,15 +38,16 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use arrayref::{array_ref};
 
 pub const DEFAULT_DB_URL: &'static str = "http://localhost:8123/";
-const DEFAULT_COMMIT_EVERY: Duration = Duration::from_secs(10); // Same as clickhouse crate
+const DEFAULT_COMMIT_EVERY: Duration = Duration::from_secs(1); // Same as clickhouse crate
 
 struct BufInserterTask<T> {
-    rx: Receiver<T>,
+    rx: Receiver<Command<T>>,
     table: &'static str,
     client: Arc<Client>,
     inserter: Inserter<T>,
 
     buffer: VecDeque<T>,
+    confirmations: VecDeque<oneshot::Sender<()>>,
     backoff: ExponentialBackoff,
     recovery: Option<usize>,
     recovery_delay: Pin<Box<OptionFuture<Sleep>>>,
@@ -54,8 +56,12 @@ struct BufInserterTask<T> {
 }
 
 impl<T: Row + Serialize + Send + Sync + 'static> BufInserterTask<T> {
-    fn new(rx: Receiver<T>, client: Arc<Client>, table: &'static str) -> Self {
-        let inserter = client.inserter(table).expect("can't create inserter");
+    fn new(rx: Receiver<Command<T>>, client: Arc<Client>, table: &'static str) -> Self {
+        let inserter = client
+            .inserter(table)
+            .expect("can't create inserter")
+            .with_max_duration(DEFAULT_COMMIT_EVERY)
+            .with_max_entries(1);
         let mut backoff = ExponentialBackoff::default();
         backoff.max_elapsed_time = None;
 
@@ -65,6 +71,7 @@ impl<T: Row + Serialize + Send + Sync + 'static> BufInserterTask<T> {
             inserter,
             table,
             buffer: VecDeque::new(),
+            confirmations: VecDeque::new(),
             backoff,
             recovery: None,
             recovery_delay: Box::pin(None.into()),
@@ -105,6 +112,9 @@ impl<T: Row + Serialize + Send + Sync + 'static> BufInserterTask<T> {
                 if self.buffer.is_empty() {
                     if let Some(_idx) = self.recovery.take() {
                         log::info!("finished recovery for table {}", self.table);
+                        while let Some(sender) = self.confirmations.pop_front() {
+                            sender.send(()).unwrap();
+                        }
                     }
                 }
                 self.backoff.reset();
@@ -114,7 +124,9 @@ impl<T: Row + Serialize + Send + Sync + 'static> BufInserterTask<T> {
                 self.inserter = self
                     .client
                     .inserter(self.table)
-                    .expect("can't create new inserter");
+                    .expect("can't create new inserter")
+                    .with_max_duration(DEFAULT_COMMIT_EVERY)
+                    .with_max_entries(1);
 
                 self.restart_recovery(err)
             }
@@ -137,11 +149,24 @@ impl<T: Row + Serialize + Send + Sync + 'static> BufInserterTask<T> {
 
         loop {
             tokio::select! {
-                Some(entry) = self.rx.recv() => {
-                    self.buffer.push_back(entry);
-                    if self.recovery.is_none() {
-                        let res = write_and_commit!(self.buffer.back().unwrap());
-                        self.proccess_insert_result(res, false);
+                Some(cmd) = self.rx.recv() => {
+                    match cmd {
+                        Command::Write(entry) => {
+                            self.buffer.push_back(entry);
+                            if self.recovery.is_none() {
+                                let res = write_and_commit!(self.buffer.back().unwrap());
+                                self.proccess_insert_result(res, false);
+                            }
+                        }
+                        Command::Commit(sender) => {
+                            let res = self.inserter.commit().await;
+                            self.proccess_insert_result(res, true);
+                            if self.is_recovery() {
+                                self.confirmations.push_back(sender);
+                            } else {
+                                sender.send(()).unwrap();
+                            }
+                        }
                     }
                 }
                 _ = &mut self.recovery_delay, if self.is_recovery() => {
@@ -163,8 +188,13 @@ impl<T: Row + Serialize + Send + Sync + 'static> BufInserterTask<T> {
     }
 }
 
+enum Command<T> {
+    Write(T),
+    Commit(oneshot::Sender<()>),
+}
+
 struct BufInserter<T> {
-    sender: Sender<T>,
+    sender: Sender<Command<T>>,
     _handle: JoinHandle<()>,
 }
 
@@ -179,9 +209,18 @@ impl<T: Row + Serialize + Send + Sync + 'static> BufInserter<T> {
 
     pub async fn insert(&mut self, item: T) {
         self.sender
-            .send(item)
+            .send(Command::Write(item))
             .await
             .unwrap_or_else(|_| panic!("insert task panicked"));
+    }
+
+    pub async fn commit(&mut self) {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(Command::Commit(tx))
+            .await
+            .unwrap_or_else(|_| panic!("commit task panicked"));
+        rx.await;
     }
 }
 
@@ -226,6 +265,7 @@ enum Message {
     PruneRow(PruneRow),
     TransactionRow(TransactionRow),
     EvmTransactionRow(EvmTransactionRow),
+    Commit,
 }
 
 #[derive(Debug)]
@@ -293,6 +333,18 @@ impl AccountDumper {
                 }
                 Message::EvmTransactionRow(row) => {
                     evm_transactions_inserter.insert(row).await;
+                }
+                Message::Commit => {
+                    log::debug!("commit started");
+                    accounts_inserter.commit().await;
+                    log::debug!("accounts committed");
+                    accounts_after_transaction_inserter.commit().await;
+                    log::debug!("accounts after committed");
+                    transactions_inserter.commit().await;
+                    log::debug!("transactions committed");
+                    evm_transactions_inserter.commit().await;
+                    log::debug!("evm transactions committed");
+                    log::debug!("commit finished");
                 }
             }
         }
@@ -366,6 +418,12 @@ impl AccountDumper {
             .unwrap_or_else(|_| panic!("try_send failed"));
     }
 
+    pub fn flush_transaction(&self) {
+        self.message_tx
+            .try_send(Message::Commit)
+            .unwrap_or_else(|_| panic!("try_send failed"));
+    }
+
     pub fn transaction_executed(
         &self,
         slot: u64,
@@ -381,7 +439,7 @@ impl AccountDumper {
             logs,
         };
 
-        log::debug!("transaction executed: {:?}", row);
+        log::debug!("[{}] transaction executed: {:?}", first_signature, row);
 
         self.message_tx
             .try_send(Message::TransactionRow(row))
@@ -622,6 +680,13 @@ impl EthSignature {
         hash.encode_hex()
     }
     */
+}
+
+impl std::fmt::Display for EthSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = std::str::from_utf8(&self.0).unwrap();
+        write!(f, "{}", s)
+    }
 }
 
 impl FromIterator<char> for EthSignature {
