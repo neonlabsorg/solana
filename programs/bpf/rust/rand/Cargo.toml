@@ -10,7 +10,7 @@ documentation = "https://docs.rs/solana-bpf-rust-rand"
 edition = "2021"
 
 [dependencies]
-getrandom = { version = "0.1.14", features = ["dummy"] }
+getrandom = { version = "=0.1.16", features = ["dummy"] }
 rand = "0.7"
 solana-program = { path = "../../../../sdk/program", version = "=1.9.12" }
 
