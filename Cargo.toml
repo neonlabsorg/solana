@@ -85,6 +85,7 @@ members = [
 
 exclude = [
     "programs/bpf",
+    "bpf_tests",
 ]
 
 # TODO: Remove once the "simd-accel" feature from the reed-solomon-erasure
