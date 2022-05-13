@@ -314,6 +314,13 @@ impl<'a> InvokeContext<'a> {
 
             self.pre_accounts = Vec::with_capacity(instruction.accounts.len());
             let mut work = |_unique_index: usize, account_index: usize| {
+
+                let account_index = if account_indices.is_empty() {
+                    account_index
+                } else {
+                    account_indices[account_index]
+                };
+
                 if account_index < self.accounts.len() {
                     let account = self.accounts[account_index].1.borrow();
                     self.pre_accounts
