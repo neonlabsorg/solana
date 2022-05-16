@@ -1,7 +1,6 @@
 mod read_elf;
-// mod vm;
-mod vm_1_9_12;
-mod evm_loader;
+mod vm;
+mod evm_instructions;
 mod program_options;
 
 use std::{
@@ -9,6 +8,8 @@ use std::{
     process::{exit},
 };
 use structopt::StructOpt;
+
+use evm_instructions::create_account_v02;
 
 
 fn main(){
@@ -20,7 +21,7 @@ fn main(){
     }
 
     let opt = program_options::Opt::from_iter(&args);
-    if let Err(e) = evm_loader::create_account(&opt) {
+    if let Err(e) = create_account_v02::create_account(&opt) {
         eprintln!("error: {:#}", e);
         exit(1);
     }
