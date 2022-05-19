@@ -194,7 +194,7 @@ impl<'a> StackFrame<'a> {
 pub struct InvokeContext<'a> {
     invoke_stack: Vec<StackFrame<'a>>,
     rent: Rent,
-    pre_accounts: Vec<PreAccount>,
+    pub pre_accounts: Vec<PreAccount>,
     accounts: &'a [TransactionAccountRefCell],
     builtin_programs: &'a [BuiltinProgram],
     pub sysvar_cache: Cow<'a, SysvarCache>,
@@ -583,6 +583,9 @@ impl<'a> InvokeContext<'a> {
         self.record_instruction(self.get_stack_height(), instruction);
 
         let message = SanitizedMessage::Legacy(message);
+
+        println!("PROCESS_INSTRUCTION()");
+
         self.process_instruction(
             &message,
             &message.instructions()[0],
@@ -734,6 +737,7 @@ impl<'a> InvokeContext<'a> {
         caller_write_privileges: &[bool],
         timings: &mut ExecuteTimings,
     ) -> ProcessInstructionResult {
+        // println!("process_instruction !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ");
         let is_lowest_invocation_level = self.invoke_stack.is_empty();
         if !is_lowest_invocation_level {
             // Verify the calling program hasn't misbehaved

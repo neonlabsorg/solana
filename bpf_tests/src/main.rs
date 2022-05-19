@@ -21,7 +21,7 @@ fn main(){
     }
 
     let opt = program_options::Opt::from_iter(&args);
-    if let Err(e) = create_account_v02::create_account(&opt) {
+    if let Err(e) = create_account_v02::process(&opt) {
         eprintln!("error: {:#}", e);
         exit(1);
     }

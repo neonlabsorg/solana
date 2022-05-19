@@ -72,6 +72,7 @@ impl MessageProcessor {
         lamports_per_signature: u64,
         current_accounts_data_len: u64,
     ) -> Result<ProcessedMessageInfo, TransactionError> {
+        println!("start process_messags()");
         let mut invoke_context = InvokeContext::new(
             rent,
             accounts,

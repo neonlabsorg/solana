@@ -16,12 +16,7 @@ use solana_sdk::{
 
 };
 
-
 use solana_sdk::account::WritableAccount;
-
-use std::{
-    str::FromStr,
-};
 
 
 pub const evm_loader_str :&str = "eeLSJgWzzxrqKv1UxtRVVH8FX3qCQWUs9QuAjJpETGU";

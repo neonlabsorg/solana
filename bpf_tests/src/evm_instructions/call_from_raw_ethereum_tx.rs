@@ -1,71 +1,62 @@
 // use evm_loader::account::EthereumAccount;
 // use crate::read_elf;
 // use crate::program_options;
-// use crate::vm_1_9_12;
+// use crate::vm;
 // use bincode::serialize;
 //
 // use evm::{H160};
-//
-//
+// use evm_loader::account::ACCOUNT_SEED_VERSION;
 //
 // use solana_sdk::{
-//     feature_set::{
-//         FeatureSet,
-//         tx_wide_compute_cap,
-//         requestable_heap_size,
-//         remove_native_loader,
-//         // demote_program_write_locks,
-//     },
 //     account::AccountSharedData,
 //     bpf_loader,
 //     native_loader,
 //     pubkey::Pubkey,
 //     system_program,
 // };
+//
 // use std::{
 //     str::FromStr,
 //     cell::RefCell,
 //     rc::Rc,
+//     fs::File,
+//     io::prelude::*,
 // };
+//
 // use solana_sdk::account::WritableAccount;
+// use hex;
 //
-// pub const ACCOUNT_SEED_VERSION: u8 = 1_u8;
+// use crate::evm_instructions::{
+//     feature_set,
+//     bpf_loader_shared,
+//     evm_loader_shared,
+//     system_shared,
+//     evm_loader_str
+// };
 //
 //
+// fn read_contract(file_name: &str)->std::io::Result<Vec<u8>> {
+//     let mut f = File::open(file_name)?;
+//     let mut hex = String::new();
+//     f.read_to_string(&mut hex)?;
+//     let bin = hex::decode(hex.as_str()).unwrap();
 //
-// pub fn create_account(
+//     Ok(bin)
+// }
+//
+// pub fn process(
 //     opt: &program_options::Opt
 // ) -> Result<(), anyhow::Error> {
 //
-//     let contract = read_elf::read_so(opt)?;
+//     let evm_contract = read_elf::read_so(opt)?;
 //
-//     let mut features = FeatureSet::all_enabled();
-//     features.deactivate(&tx_wide_compute_cap::id());
-//     features.deactivate(&requestable_heap_size ::id());
-//     // features.deactivate(&remove_native_loader ::id());
-//     // features.deactivate(&demote_program_write_locks::id());
-//
-//
-//
-//     let evm_loader = Pubkey::from_str("eeLSJgWzzxrqKv1UxtRVVH8FX3qCQWUs9QuAjJpETGU")?;
+//     let evm_loader = Pubkey::from_str(&evm_loader_str)?;
 //
 //     let ether_address = H160::default();
 //     let program_seeds = [ &[ACCOUNT_SEED_VERSION], ether_address.as_bytes()];
 //     let  (new_account, nonce) = Pubkey::find_program_address(&program_seeds, &evm_loader);
 //
 //     let operator =  Pubkey::new_unique();
-//
-//
-//     let mut bpf_loader_sh = AccountSharedData::new(1_000_000_000_000_000_000, 25, &native_loader::id());
-//     bpf_loader_sh.set_executable(true);
-//
-//     let mut evm_loader_sh = AccountSharedData::new(1_000_000_000_000_000_000, 36, &bpf_loader::id());
-//     evm_loader_sh.set_executable(true);
-//
-//
-//     let mut system_sh = AccountSharedData::new(1_000_000_000, 14, &native_loader::id());
-//     system_sh.set_executable(true);
-//
 //     let program_indices = [0, 1];
 //
 //
@@ -78,13 +69,13 @@
 //             false,
 //             false,
 //             bpf_loader::id(),
-//             Rc::new(RefCell::new(bpf_loader_sh))
+//             Rc::new(RefCell::new(bpf_loader_shared()))
 //         ),
 //         (
 //             false,
 //             false,
 //             evm_loader,
-//             Rc::new(RefCell::new(evm_loader_sh))
+//             Rc::new(RefCell::new(evm_loader_shared()))
 //         ),
 //         (
 //             true,
@@ -96,7 +87,7 @@
 //             false,
 //             false,
 //             system_program::id(),
-//             Rc::new(RefCell::new(system_sh))
+//        read_contract     Rc::new(RefCell::new(system_shared()))
 //         ),
 //         (
 //             false,
@@ -116,8 +107,8 @@
 //
 //
 //     vm::run(
-//         &contract,
-//         features,
+//         &evm_contract,
+//         feature_set(),
 //         keyed_accounts,
 //         &ix_data,
 //         &program_indices,

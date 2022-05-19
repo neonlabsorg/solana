@@ -238,6 +238,7 @@ dependencies = [
  "bincode",
  "evm",
  "evm-loader",
+ "hex",
  "regex",
  "solana-bpf-loader-program",
  "solana-logger 1.9.12",

@@ -32,7 +32,7 @@ use crate::evm_instructions::{
 
 
 
-pub fn create_account(
+pub fn process(
     opt: &program_options::Opt
 ) -> Result<(), anyhow::Error> {
 
@@ -48,7 +48,6 @@ pub fn create_account(
     let program_indices = [0, 1];
 
 
-    println!("program_seeds: {:?}", &program_seeds.to_vec());
     println!("new_acc: {}, {}", ether_address, new_account);
     println!("operator: {}", operator);
 
@@ -83,12 +82,6 @@ pub fn create_account(
             new_account,
             AccountSharedData::new_ref(0, 0, &system_program::id()),
         ),
-        // (
-        //     false,
-        //     true,
-        //     new_account,
-        //     AccountSharedData::new_ref(1_000_000_000, EthereumAccount::SIZE, &system_program::id()),
-        // ),
     ];
 
     let ix_data: Vec<u8>= serialize(&(24_u8, ether_address.as_fixed_bytes(), nonce)).unwrap();

@@ -1084,13 +1084,13 @@ impl Executor for BpfExecutor {
                 before - after,
                 before
             );
-            if log_enabled!(Trace) {
+            // if log_enabled!(Trace) {
                 let mut trace_buffer = Vec::<u8>::new();
                 let analysis = Analysis::from_executable(&self.executable);
                 vm.get_tracer().write(&mut trace_buffer, &analysis).unwrap();
                 let trace_string = String::from_utf8(trace_buffer).unwrap();
-                trace!("BPF Program Instruction Trace:\n{}", trace_string);
-            }
+                println!("BPF Program Instruction Trace:\n{}", trace_string);
+            // }
             drop(vm);
             let (_returned_from_program_id, return_data) = &invoke_context.return_data;
             if !return_data.is_empty() {

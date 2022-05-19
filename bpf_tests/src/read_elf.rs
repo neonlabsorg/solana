@@ -84,7 +84,7 @@ fn remove_bss_sections(module: &Path) -> Result<(), anyhow::Error> {
 
 pub fn read_so(opt: &program_options::Opt) -> Result<Vec<u8>, anyhow::Error>{
     let path = opt.file.with_extension("so");
-    println!("path = {}", path.to_string_lossy());
+    // println!("path = {}", path.to_string_lossy());
 
     if !path.exists() {
         return Err(anyhow!(

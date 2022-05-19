@@ -52,6 +52,7 @@ use {
         slice::from_raw_parts_mut,
         str::{from_utf8, Utf8Error},
         sync::Arc,
+        str::FromStr,
     },
     thiserror::Error as ThisError,
 };
@@ -2518,6 +2519,7 @@ fn call<'a, 'b: 'a>(
     let caller_program_id = invoke_context
         .get_caller()
         .map_err(SyscallError::InstructionError)?;
+    // println!("caller_program_id: {}", caller_program_id);
     let signers = syscall.translate_signers(
         &loader_id,
         caller_program_id,
@@ -2544,6 +2546,8 @@ fn call<'a, 'b: 'a>(
 
     // Process instruction
     let message = SanitizedMessage::Legacy(message);
+    // println!("syscalls::call() process_instruction !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ");
+
     invoke_context
         .process_instruction(
             &message,
@@ -2556,9 +2560,23 @@ fn call<'a, 'b: 'a>(
         .result
         .map_err(SyscallError::InstructionError)?;
 
+    let a = invoke_context.get_keyed_accounts().unwrap();
+    // for acc in a {
+    //     println!("invoke_context.get_keyed_accounts() {:?}", acc);
+    // }
+
+    // let a = Pubkey::from_str("3eo33LSK8VhxZ6bK9Qh3F7oGBTTcLymy4Lj6RF7X2MeV").unwrap();
+    // let a = invoke_context.get_account(&a).unwrap();
+    // println!(" updated acc {:?}", a);
+    // println!("");
+
+
     // Copy results back to caller
     for (callee_account, caller_account) in accounts.iter_mut() {
+        // println!(" callee_account {:?}", callee_account);
         if let Some(caller_account) = caller_account {
+            // println!(" caller_account.data {:?}", caller_account.data);
+            // println!(" caller_account.lamports {:?}", caller_account.lamports);
             let callee_account = callee_account.borrow();
             *caller_account.lamports = callee_account.lamports();
             *caller_account.owner = *callee_account.owner();
@@ -2605,7 +2623,11 @@ fn call<'a, 'b: 'a>(
             caller_account
                 .data
                 .copy_from_slice(&callee_account.data()[0..new_len]);
+            // println!(" caller_account.data UPDATED {:?}", caller_account.data);
+            // println!(" caller_account.lamports UPDATED {:?}", caller_account.lamports);
+
         }
+        // println!("");
     }
 
     Ok(SUCCESS)

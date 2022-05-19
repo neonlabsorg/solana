@@ -6,18 +6,16 @@ use std::{
     sync::Arc,
     time::Instant,
     borrow::Cow,
+    str::FromStr,
 };
 
 use solana_bpf_loader_program::{
     create_vm, serialization::serialize_parameters, syscalls::register_syscalls, BpfError,
     ThisInstructionMeter,
+    serialization::deserialize_parameters,
 };
 use solana_program_runtime::{
     compute_budget::ComputeBudget,
-    // instruction_processor::{
-    //     Executors,
-    //     InstructionProcessor,
-    // },
     invoke_context::{
         prepare_mock_invoke_context,
         InvokeContext,
@@ -27,6 +25,7 @@ use solana_program_runtime::{
     },
     log_collector::LogCollector,
     sysvar_cache::SysvarCache,
+    stable_log,
 };
 use solana_rbpf::{elf::Executable, vm::Config};
 use solana_sdk::{
@@ -41,16 +40,18 @@ use solana_sdk::{
     // transaction_context::TransactionAccount,
     sysvar,
     slot_hashes::SlotHashes,
+    keyed_account::keyed_account_at_index,
 };
 use solana_sdk::account::ReadableAccount;
 use solana_runtime::{builtins, bank::BuiltinPrograms};
+use std::borrow::Borrow;
+use std::{ fmt::Debug, pin::Pin};
 
-// fn fill_sysvar_cache() -> Vec<(Pubkey, Vec<u8>)> {
-//     let mut sysvar_cache: Vec<(Pubkey, Vec<u8>)> = vec![];
-//     let rent = AccountSharedData::new_data_with_space(1009200, &Rent::default(), 17,  &sysvar::id()).unwrap();
-//     sysvar_cache.push((sysvar::rent::id(), rent.data().to_vec()));
-//     sysvar_cache
-// }
+
+use solana_sdk::{
+    feature_set::do_support_realloc
+};
+
 
 fn fill_sysvar_cache() -> SysvarCache {
     let mut sysvar_cache =  SysvarCache::default();
@@ -77,8 +78,6 @@ fn fill_sysvar_cache() -> SysvarCache {
     }
     sysvar_cache
 }
-
-
 
 
 fn execute(
@@ -111,49 +110,49 @@ fn execute(
     let mut builtin_programs: BuiltinPrograms = BuiltinPrograms::default();
     let mut builtins = builtins::get();
     for builtin in builtins.genesis_builtins {
-        println!("Adding program {} under {:?}", &builtin.name, &builtin.id);
+        // println!("Adding program {} under {:?}", &builtin.name, &builtin.id);
         builtin_programs.vec.push(BuiltinProgram {
             program_id: builtin.id,
             process_instruction: builtin.process_instruction_with_context,
         });
     };
-    // println!("!!!!!!!!!!!   preparation.message.account_keys {:?}", preparation.message.account_keys.len());
-    // println!("message.instruction[0].program_id = {:?}", preparation.message.program_id(0));
-    // println!("preparation.accounts {:?}", preparation.accounts);
-    // println!("preparation.message {:?}", preparation.message);
-    // println!("preparation.account_indices {:?}", preparation.account_indices);
-    // println!("keyed accounts len = {}", keyed_accounts.len() as u64);
-    // println!("preparation accounts len = {}", preparation.accounts.len() as u64);
-
-    let result = {
-        let mut invoke_context = InvokeContext::new(
-            Rent::default(),
-            &preparation.accounts,
-            &builtin_programs.vec,
-            Cow::Borrowed(&sysvar_cache),
-            Some(Rc::clone(&logs)),
-            compute_budget,
-            Rc::new(RefCell::new(Executors::default())),
-            Arc::new(features),
-            Hash::default(),
-            5_000,
-            0,
-        );
 
 
-        invoke_context
-            .push(
-                &preparation.message,
-                &preparation.message.instructions()[0],
-                program_indices,
-                &preparation.account_indices,
-            )
-            .unwrap();
+    let mut invoke_context = InvokeContext::new(
+        Rent::default(),
+        &preparation.accounts,
+        &builtin_programs.vec,
+        Cow::Borrowed(&sysvar_cache),
+        Some(Rc::clone(&logs)),
+        compute_budget,
+        Rc::new(RefCell::new(Executors::default())),
+        Arc::new(features),
+        Hash::default(),
+        5_000,
+        0,
+    );
 
-        let keyed_accounts = invoke_context.get_keyed_accounts().unwrap();
-        // println!("invoke_context.accounts len = {}", keyed_accounts.len().into());
 
-        // let instruction_data = ix_data;
+    invoke_context
+        .push(
+            &preparation.message,
+            &preparation.message.instructions()[0],
+            program_indices,
+            &preparation.account_indices,
+        )
+        .unwrap();
+
+    let keyed_accounts = invoke_context.get_keyed_accounts().unwrap();
+    let program = keyed_account_at_index(keyed_accounts, 1)?;
+    let program_id = *program.unsigned_key();
+    let stack_height = invoke_context.get_stack_height();
+    let log_collector = invoke_context.get_log_collector();
+
+    let compute_meter = invoke_context.get_compute_meter();
+    let mut instruction_meter = ThisInstructionMeter {compute_meter: compute_meter.clone() };
+
+    let res =
+    {
         let (mut parameter_bytes, account_lengths) = serialize_parameters(
             keyed_accounts[0].unsigned_key(),
             keyed_accounts[1].unsigned_key(),
@@ -161,48 +160,82 @@ fn execute(
             ix_data,
         )
             .unwrap();
-        // println!("account_lengths len = {}", account_lengths.len().into());
 
-        let compute_meter = invoke_context.get_compute_meter();
-        let mut instruction_meter = ThisInstructionMeter { compute_meter };
-
-        let syscall_registry = register_syscalls(&mut invoke_context).unwrap();
+        let invoke_context_mut = &mut invoke_context;
+        let syscall_registry = register_syscalls(invoke_context_mut).unwrap();
         let mut executable =
             match Executable::<BpfError, ThisInstructionMeter>::from_elf(
-            contract,
-            None,
-            config,
-            syscall_registry,
-        ){
-              Ok(a) => a,
+                contract,
+                None,
+                config,
+                syscall_registry,
+            ){
+                Ok(a) => a,
                 Err(e) => {
                     println! ("error {}", e);
                     return Err(anyhow!(""));
                 }
             };
-            // .unwrap();
-        // executable.jit_compile().unwrap();
         Executable::<BpfError, ThisInstructionMeter>::jit_compile(&mut executable).unwrap();
 
-        let mut vm = create_vm(
-            &executable,
-            parameter_bytes.as_slice_mut(),
-            &mut invoke_context,
-            &account_lengths,
-        ).unwrap();
-        let start_time = Instant::now();
-        let result = vm.execute_program_jit(&mut instruction_meter);
-        let instruction_count = vm.get_total_instruction_count();
-        println!(
-            "Executed {}  instructions in {:.2}s.",
-            // path.to_string_lossy(),
-            instruction_count,
-            start_time.elapsed().as_secs_f64()
-        );
+        let result = {
+                let mut vm = create_vm(
+                    &executable,
+                    parameter_bytes.as_slice_mut(),
+                    invoke_context_mut,
+                    &account_lengths,
+                ).unwrap();
 
+                stable_log::program_invoke(&log_collector, &program_id, stack_height);
+
+
+                let start_time = Instant::now();
+                let before: u64 = compute_meter.try_borrow().unwrap().get_remaining();
+                let result = vm.execute_program_jit(&mut instruction_meter);
+                let after:u64 = compute_meter.try_borrow().unwrap().get_remaining();
+
+                let instruction_count = vm.get_total_instruction_count();
+
+                drop(vm);
+
+                let keyed_accounts =  invoke_context_mut.get_keyed_accounts()?;
+                let first_instruction_account = 1;
+                deserialize_parameters(
+                    &loader_id,
+                    &keyed_accounts[first_instruction_account + 1..],
+                    parameter_bytes.as_slice(),
+                    &account_lengths,
+                    invoke_context_mut
+                        .feature_set
+                        .is_active(&do_support_realloc::id()),
+                );
+                println!(
+                    "Executed {}  instructions in {:.2}s.",
+                    instruction_count,
+                    start_time.elapsed().as_secs_f64()
+                );
+
+                println!(
+                    "Program  {} consumed {} of {} compute units",
+                    &program_id,
+                    before - after,
+                    before
+                );
+
+                result
+        };
         result
     };
-    result.map_err(|e| {anyhow!("exit code: {}", e)})
+
+    let  return_data = &invoke_context.return_data.1;
+
+    if !return_data.is_empty() {
+        stable_log::program_return(&log_collector, &program_id, &return_data);
+    }
+    else{
+        stable_log::program_return(&log_collector, &program_id, &vec![]);
+    }
+    res.map_err(|e| {anyhow!("exit code: {}", e)})
 }
 
 pub fn run(
@@ -213,9 +246,7 @@ pub fn run(
     program_indices : &[usize],
 
 ) -> Result<(), anyhow::Error> {
-    // let data = read_elf::read_so(&opt)?;
 
-    // let logs = LogCollector::new_ref_with_limit(None);
     let logs = Rc::new(RefCell::new(LogCollector::default()));
 
     let result = execute(
