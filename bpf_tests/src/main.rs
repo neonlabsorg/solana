@@ -9,10 +9,13 @@ use std::{
 };
 use structopt::StructOpt;
 
-use evm_instructions::create_account_v02;
-
+use evm_instructions::{
+    create_account_v02,
+    call_from_raw_ethereum_tx,
+};
 
 fn main(){
+
     solana_logger::setup();
 
     let mut args = env::args().collect::<Vec<_>>();

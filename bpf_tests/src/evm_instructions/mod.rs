@@ -1,5 +1,5 @@
 pub mod create_account_v02;
-// pub mod call_from_raw_ethereum_tx;
+pub mod call_from_raw_ethereum_tx;
 
 use solana_sdk::{
     feature_set::{
@@ -13,8 +13,9 @@ use solana_sdk::{
     bpf_loader,
     native_loader,
     system_program,
-
+    sysvar::instructions,
 };
+
 
 use solana_sdk::account::WritableAccount;
 
@@ -42,6 +43,12 @@ pub fn evm_loader_shared() -> AccountSharedData {
 
 pub fn system_shared() -> AccountSharedData {
     let mut shared = AccountSharedData::new(1_000_000_000, 14, &native_loader::id());
+    shared.set_executable(true);
+    shared
+}
+
+pub fn sysvar_shared() -> AccountSharedData {
+    let mut shared = AccountSharedData::new(1_000_000_000, 0, &instructions::id());
     shared.set_executable(true);
     shared
 }
