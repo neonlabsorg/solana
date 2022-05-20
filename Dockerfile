@@ -1,4 +1,4 @@
-FROM solanalabs/rust:latest AS builder
+FROM solanalabs/rust:1.60.0 AS builder
 
 ARG NEON_REVISION
 ENV NEON_REVISION $NEON_REVISION
