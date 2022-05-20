@@ -179,51 +179,6 @@ impl MessageProcessor {
         instruction_trace.append(invoke_context.get_instruction_trace_mut());
 
         if let Some((account_dumper, pre_accounts)) = dump_job {
-
-            let legacy = match message{
-                SanitizedMessage::Legacy(legacy) => legacy.clone(),
-                SanitizedMessage::V0(loaded) => {
-                    legacy::Message{
-                        header: loaded.message.header.clone(),
-                        account_keys: loaded.message.account_keys.clone(),
-                        recent_blockhash: loaded.message.recent_blockhash,
-                        instructions: loaded.message.instructions.clone()
-                    }
-                }
-            };
-
-
-            account_dumper.transaction_executed(slot, first_signature, &legacy, logs);
-
-            let neon_ixs = legacy.instructions.iter().filter(|&ix| {
-                *ix.program_id(&legacy.account_keys) == crate::neon_evm_program::id()
-            });
-            for neon_ix in neon_ixs {
-                // We rely on the fact that the ix account order is preserved during `visit_each_account`.
-                let mut sorted_pre_accounts = Vec::new();
-                let mut work = |_unique_idx, idx| {
-                    let pre_account: &PreAccount = &pre_accounts[idx];
-                    sorted_pre_accounts.push(pre_account);
-
-                    Ok(())
-                };
-                let _ = neon_ix.visit_each_account(&mut work);
-
-                let (tag, evm_ix_data) = neon_ix.data.split_first().unwrap();
-
-                match EvmInstruction::parse(tag) {
-                    Ok(evm_ix) => account_dumper.evm_transaction_executed(
-                        evm_ix,
-                        evm_ix_data,
-                        first_signature,
-                        sorted_pre_accounts,
-                    ),
-                    Err(err) => {
-                        error!("failed to parse evm instruction {:?}", err);
-                    }
-                }
-            }
-
             for (pre_account, (pubkey, account)) in pre_accounts.into_iter().zip(accounts) {
                 assert_eq!(pre_account.key(), pubkey);
                 let account = account.borrow();

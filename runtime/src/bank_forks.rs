@@ -472,13 +472,6 @@ impl BankForks {
             .collect();
         prune_slots_time.stop();
 
-        if let Some(account_dumper) = self.account_dumper.as_ref() {
-            prune_slots
-                .iter()
-                .filter(|&&s| s > highest_confirmed_root)
-                .for_each(|&s| account_dumper.prune_transaction(s));
-        }
-
         let mut prune_remove_time = Measure::start("prune_slots");
         let removed_banks = prune_slots
             .into_iter()
