@@ -45,7 +45,7 @@ etcommon-bigint = "=0.2.10"
 itertools = "0.10.1"
 libsecp256k1 = "0.6.0"
 num-bigint = "=0.4.3"
-primitive-types = "=0.11.1"
+primitive-types = "=0.7.3"
 rand = "0.7.0"
 solana-logger = { path = "../../logger", version = "=1.9.12" }
 wasm-bindgen = "0.2"
