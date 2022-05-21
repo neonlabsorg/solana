@@ -2025,7 +2025,7 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallAltBn128Pairing<'a, 'b> {
                 .map_err(|_| SyscallError::InvokeContextBorrowFailed),
             result
         );
-        let ele_len = input.len() / ALT_BN128_PAIRING_ELEMENT_LEN;
+        let ele_len = input_size / ALT_BN128_PAIRING_ELEMENT_LEN as u64;
         let cost = invoke_context.get_compute_budget().mem_op_base_cost.max(
             invoke_context
                 .get_compute_budget()
