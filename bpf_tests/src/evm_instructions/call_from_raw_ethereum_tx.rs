@@ -54,6 +54,7 @@ use evm_loader::{
 
 use libsecp256k1::{SecretKey, Signature};
 use libsecp256k1::PublicKey;
+
 use rlp::RlpStream;
 
 
@@ -65,6 +66,7 @@ pub fn read_contract(file_name: &str)->std::io::Result<Vec<u8>> {
     Ok(bin)
 }
 
+// #[derive(Debug)]
 struct UnsignedTransaction {
     nonce: u64,
     gas_price: U256,
@@ -73,6 +75,24 @@ struct UnsignedTransaction {
     value: U256,
     data: Vec<u8>,
     chain_id: U256,
+}
+
+impl rlp::Encodable for UnsignedTransaction {
+    fn rlp_append(&self, s: &mut RlpStream) {
+        s.begin_list(9);
+        s.append(&self.nonce);
+        s.append(&self.gas_price);
+        s.append(&self.gas_limit);
+        match self.to.as_ref() {
+            None => s.append(&""),
+            Some(addr) => s.append(addr),
+        };
+        s.append(&self.value);
+        s.append(&self.data);
+        s.append(&self.chain_id);
+        s.append_empty_data();
+        s.append_empty_data();
+    }
 }
 
 fn keccak256(data: &[u8]) -> [u8; 32] {
@@ -85,7 +105,10 @@ pub fn make_ethereum_transaction(
 ) -> (Vec<u8>, Vec<u8>) {
 
     let pk_hex: &[u8] = "0510266f7d37f0957564e4ce1a1dcc8bb3408383634774a2f4a94a35f4bc53e0".as_bytes();
-    let pk = SecretKey::from_slice(&hex::decode(pk_hex).unwrap());
+    let mut bin : [u8; 32] = [0; 32];
+    bin.copy_from_slice( hex::decode(&pk_hex).unwrap().as_slice());
+
+    let pk = SecretKey::parse(&bin).unwrap();
 
     let rlp_data = {
         let tx = UnsignedTransaction {
@@ -102,6 +125,7 @@ pub fn make_ethereum_transaction(
     };
 
     let (r_s, v) = {
+        use libsecp256k1::{Message, sign};
         let msg = libsecp256k1::Message::parse(&keccak256(rlp_data.as_slice()));
         libsecp256k1::sign(&msg, &pk)
     };
@@ -117,13 +141,14 @@ pub fn make_ethereum_transaction(
 pub fn account_set() -> (Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>)>, Vec<u8>){
 
     let evm_loader_key = Pubkey::from_str(&evm_loader_str).unwrap();
-    let operator_key = Pubkey::from_str("NeonPQFrw5stVvs1rFLDxALWUBDCnSPsWBP83RfNUKK")?;
+    let operator_key = Pubkey::from_str("NeonPQFrw5stVvs1rFLDxALWUBDCnSPsWBP83RfNUKK").unwrap();
     let code_key = Pubkey::new_unique();
 
     //treasury
     let treasury_index: u32 = 1;
     let seed = format!("{}{}", collateral_pool_base::PREFIX, treasury_index);
-    let treasury_key = Pubkey::create_with_seed(&collateral_pool_base::id(), &seed, &evm_loader_key)?;
+    let collateral_pool_base= &solana_sdk::pubkey::Pubkey::new_from_array(collateral_pool_base::id().to_bytes());
+    let treasury_key = Pubkey::create_with_seed(&collateral_pool_base, &seed, &evm_loader_key).unwrap();
 
     //caller
     let user_address = H160::from_str("0000000000000000000000000000000000000001").unwrap();
@@ -196,7 +221,7 @@ pub fn account_set() -> (Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>
     ];
 
     println!("operator_key {}", operator_key);
-    println!("treasure_key {}", treasure_key);
+    println!("treasure_key {}", treasury_key);
     println!("user_key {}", user_key);
     println!("contract_key {}", contract_key);
     println!("code_key {}", code_key);
@@ -220,6 +245,7 @@ pub fn process(
     let evm_contract = read_elf::read_so(opt)?;
 
     let (keyed_accounts, ix_data) = account_set();
+    let program_indices = [0, 1];
 
     vm::run(
         &evm_contract,
