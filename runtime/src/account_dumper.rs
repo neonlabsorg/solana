@@ -456,11 +456,16 @@ impl AccountDumper {
 
         let send = |from, signature, unsigned_msg| {
             let row = construct_tx_row( from, unsigned_msg, signature, first_signature);
-            //eprintln!("NEON unsigned: {:?} sign: {:?} hash {:?}", unsigned_msg, sign, keccak::hash(&encoded).encode_hex::<String>());
-            log::debug!("evm transaction executed: {:?}", row);
+            if row.is_err()
+            {
+                return;
+            }
+
+            let row_data = row.unwrap();
+            log::debug!("evm transaction executed: {:?}", row_data);
 
             self.message_tx
-                .try_send(Message::EvmTransactionRow(row))
+                .try_send(Message::EvmTransactionRow(row_data))
                 .unwrap_or_else(|_| panic!("try_send failed"))
 
         };
@@ -519,8 +524,8 @@ fn construct_tx_row(
     msg: &[u8],
     eth_signature: &[u8],
     sol_signature: &Signature,
-) -> EvmTransactionRow {
-    let unsigned: UnsignedTransaction = rlp::decode(msg).unwrap();
+) -> Result<EvmTransactionRow, rlp::DecoderError> {
+    let unsigned: UnsignedTransaction = rlp::decode(msg)?;
     let to_addr = unsigned.to;
     let signed = SignedTransaction {
         unsigned,
@@ -528,13 +533,13 @@ fn construct_tx_row(
     };
     let encoded = rlp::encode(&signed);
 
-    EvmTransactionRow {
+    Ok(EvmTransactionRow {
         date_time: db_now(),
         transaction_signature: DbSignature(*sol_signature),
         eth_transaction_signature: EthSignature::new(&encoded),
         eth_from_addr: from_addr.try_into().unwrap(),
         eth_to_addr: to_addr.map(Into::into),
-    }
+    })
 }
 
 #[derive(Debug, Error)]
