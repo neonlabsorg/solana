@@ -262,6 +262,9 @@ struct EvmTransactionRow {
 enum Message {
     AccountsRow(AccountsRow),
     AccountsRowAfterTransaction(AccountsRow),
+    PruneRow(PruneRow),
+    TransactionRow(TransactionRow),
+    EvmTransactionRow(EvmTransactionRow),
     Commit,
 }
 
@@ -310,6 +313,9 @@ impl AccountDumper {
         let mut accounts_inserter = BufInserter::new(&client, "accounts")?;
         let mut accounts_after_transaction_inserter =
             BufInserter::new(&client, "accounts_after_transaction")?;
+        let mut transactions_inserter = BufInserter::new(&client, "transactions")?;
+        let mut evm_transactions_inserter = BufInserter::new(&client, "evm_transactions")?;
+        let mut prune_inserter = BufInserter::new(&client, "pruned_transactions")?;
 
         while let Some(msg) = message_rx.recv().await {
             match msg {
@@ -319,12 +325,25 @@ impl AccountDumper {
                 Message::AccountsRowAfterTransaction(row) => {
                     accounts_after_transaction_inserter.insert(row).await;
                 }
+                Message::PruneRow(row) => {
+                    prune_inserter.insert(row).await;
+                }
+                Message::TransactionRow(row) => {
+                    transactions_inserter.insert(row).await;
+                }
+                Message::EvmTransactionRow(row) => {
+                    evm_transactions_inserter.insert(row).await;
+                }
                 Message::Commit => {
                     log::debug!("commit started");
                     accounts_inserter.commit().await;
                     log::debug!("accounts committed");
                     accounts_after_transaction_inserter.commit().await;
                     log::debug!("accounts after committed");
+                    transactions_inserter.commit().await;
+                    log::debug!("transactions committed");
+                    evm_transactions_inserter.commit().await;
+                    log::debug!("evm transactions committed");
                     log::debug!("commit finished");
                 }
             }
@@ -403,6 +422,118 @@ impl AccountDumper {
         self.message_tx
             .try_send(Message::Commit)
             .unwrap_or_else(|_| panic!("try_send failed"));
+    }
+
+    pub fn transaction_executed(
+        &self,
+        slot: u64,
+        first_signature: &Signature,
+        message: &legacy::Message,
+        logs: Vec<String>,
+    ) {
+        let row = TransactionRow {
+            date_time: db_now(),
+            slot,
+            transaction_signature: DbSignature(*first_signature),
+            message: bincode::serialize(message).expect("serialize failed"),
+            logs,
+        };
+
+        log::debug!("[{}] transaction executed: {:?}", first_signature, row);
+
+        self.message_tx
+            .try_send(Message::TransactionRow(row))
+            .unwrap_or_else(|_| panic!("try_send failed"));
+    }
+
+    pub fn evm_transaction_executed(
+        &self,
+        evm_ix: EvmInstruction,
+        evm_ix_data: &[u8],
+        first_signature: &Signature,
+        pre_accounts: Vec<&PreAccount>,
+    ) {
+
+        let send = |from, signature, unsigned_msg| {
+            let row = construct_tx_row( from, unsigned_msg, signature, first_signature);
+            //eprintln!("NEON unsigned: {:?} sign: {:?} hash {:?}", unsigned_msg, sign, keccak::hash(&encoded).encode_hex::<String>());
+            log::debug!("evm transaction executed: {:?}", row);
+
+            self.message_tx
+                .try_send(Message::EvmTransactionRow(row))
+                .unwrap_or_else(|_| panic!("try_send failed"))
+
+        };
+
+        match evm_ix {
+            EvmInstruction::CallFromRawEthereumTX => {
+                let from = H160::from(*array_ref![evm_ix_data, 4, 20]);
+                let signature = &evm_ix_data[4 + 20..];
+                let unsigned_msg = &evm_ix_data[4 + 20 + 65..];
+                send(from, signature, unsigned_msg)
+            }
+            EvmInstruction::PartialCallOrContinueFromRawEthereumTX => {
+                let from = H160::from(*array_ref![evm_ix_data, 4 + 8, 20]);
+                let signature = &evm_ix_data[4 + 8 + 20..];
+                let unsigned_msg = &evm_ix_data[4 + 8 + 20 + 65..];
+                send(from, signature, unsigned_msg)
+            }
+            EvmInstruction::ExecuteTrxFromAccountDataIterativeOrContinue |
+            EvmInstruction::ExecuteTrxFromAccountDataIterativeV02  => {
+                if let Some(pre_acc) = pre_accounts.get(0) {
+                    let holder_ref = pre_acc.account();
+                    let holder = holder_ref.data();
+
+                    match get_transaction_from_holder(holder) {
+                        Ok((unsigned_msg, signature)) => {
+                            match verify_tx_signature(signature, unsigned_msg){
+                                Ok(from) => {
+                                    send(from, signature, unsigned_msg)
+                                },
+                                Err(_) =>  log::warn!("verify_tx_signature error")
+                            }
+                        },
+                        Err(_) => log::warn!("parse holder account error")
+                    }
+                } else{
+                    log::warn!("error while proccessing eth transaction: holder account not found");
+                }
+            }
+            _ =>  log::warn!("unhandled neon instruction {:?}", evm_ix)
+        };
+    }
+
+    pub fn prune_transaction(&self, prune_slot: Slot) {
+        let row = PruneRow { slot: prune_slot };
+
+        log::debug!("transaction pruned: {:?}", row);
+
+        self.message_tx
+            .try_send(Message::PruneRow(row))
+            .unwrap_or_else(|_| panic!("try_send failed"))
+    }
+}
+
+fn construct_tx_row(
+    from_addr: H160,
+    msg: &[u8],
+    eth_signature: &[u8],
+    sol_signature: &Signature,
+) -> EvmTransactionRow {
+    let unsigned: UnsignedTransaction = rlp::decode(msg).unwrap();
+    let to_addr = unsigned.to;
+    let signed = SignedTransaction {
+        unsigned,
+        signature: eth_signature,
+    };
+    let encoded = rlp::encode(&signed);
+
+    EvmTransactionRow {
+        date_time: db_now(),
+        transaction_signature: DbSignature(*sol_signature),
+        eth_transaction_signature: EthSignature::new(&encoded),
+        eth_from_addr: from_addr.try_into().unwrap(),
+        eth_to_addr: to_addr.map(Into::into),
     }
 }
 
