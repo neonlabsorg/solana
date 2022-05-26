@@ -1,0 +1,136 @@
+use crate::read_elf;
+use crate::program_options;
+use crate::vm;
+use bincode::serialize;
+
+use evm::{H160, U256};
+use evm_loader::account::ACCOUNT_SEED_VERSION;
+
+use solana_program::account_info::AccountInfo;
+
+use solana_sdk::{
+    account::{AccountSharedData,  Account},
+    // account_info::AccountInfo,
+    bpf_loader,
+    native_loader,
+    system_program,
+    sysvar::instructions,
+};
+
+use solana_program:: {
+    pubkey::Pubkey,
+    keccak::hash,
+};
+
+use std::{
+    str::FromStr,
+    cell::RefCell,
+    rc::Rc,
+    fs::File,
+    io::prelude::*,
+};
+
+use solana_sdk::account::{WritableAccount, ReadableAccount};
+use hex;
+
+use crate::evm_instructions::{
+    feature_set,
+    bpf_loader_shared,
+    evm_loader_shared,
+    system_shared,
+    evm_loader_str,
+    sysvar_shared,
+    make_ethereum_transaction,
+};
+
+use evm_loader::{
+    account::{
+        ether_account,
+        ether_contract,
+        Packable,
+        AccountData,
+    },
+    config::{
+        collateral_pool_base,
+        CHAIN_ID,
+        AUTHORIZED_OPERATOR_LIST,
+    },
+
+};
+
+use libsecp256k1::{SecretKey, Signature};
+use libsecp256k1::PublicKey;
+
+use rlp::RlpStream;
+use std::borrow::Borrow;
+use std::ops::{Deref, DerefMut};
+use std::cell::RefMut;
+
+
+fn make_keccak_instruction_data(instruction_index : u8, msg_len: u16, data_start : u16) ->Vec<u8> {
+    let mut data = Vec::new();
+
+    let check_count : u8 = 1;
+    let eth_address_size : u16 = 20;
+    let signature_size : u16 = 65;
+    let eth_address_offset: u16 = data_start;
+    let signature_offset : u16 = eth_address_offset + eth_address_size;
+    let message_data_offset : u16 = signature_offset + signature_size;
+
+    data.push(check_count);
+
+    data.push(signature_offset as u8);
+    data.push((signature_offset >> 8) as u8);
+
+    data.push(instruction_index);
+
+    data.push(eth_address_offset as u8);
+    data.push((eth_address_offset >> 8) as u8);
+
+    data.push(instruction_index);
+
+    data.push(message_data_offset as u8);
+    data.push((message_data_offset >> 8) as u8);
+
+    data.push(msg_len as u8);
+    data.push((msg_len >> 8) as u8);
+
+    data.push(instruction_index);
+    return data;
+}
+
+
+pub fn process(
+    opt: &program_options::Opt
+) -> Result<(), anyhow::Error> {
+
+
+    let keccakprog = Pubkey::from_str("KeccakSecp256k11111111111111111111111111111").unwrap();
+
+    let mut keccak_shared = AccountSharedData::new(0, 17, &native_loader::id());
+    keccak_shared.set_executable(true);
+    let mut data= keccak_shared.data_mut().as_mut_slice();
+    data.copy_from_slice(String::from("secp256k1_program").as_bytes());
+
+    let keyed_accounts: Vec<(Pubkey, Rc<RefCell<AccountSharedData>>)> =  vec![
+        // (false, false, native_loader::id(), Rc::new(RefCell::new(bpf_loader_shared()))),
+        // (false, false, bpf_loader::id(), Rc::new(RefCell::new(bpf_loader_shared()))),
+
+        (keccakprog, Rc::new(RefCell::new(keccak_shared))),
+        (instructions::id(), Rc::new(RefCell::new(sysvar_shared()))),
+    ];
+
+    let contract_address = H160::from_str("0000000000000000000000000000000000000002").unwrap();
+    let (_sig, msg) = make_ethereum_transaction(0, contract_address);
+
+    let ix_data = make_keccak_instruction_data(1, msg.len() as u16, 5);
+
+
+    vm::run_precompile(
+        feature_set(),
+        keyed_accounts,
+        &ix_data,
+    )
+
+
+}
