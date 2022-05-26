@@ -93,6 +93,8 @@ impl MessageProcessor {
             .zip(program_indices.iter())
             .enumerate()
         {
+            println!("for instruction {} {} {:?}", instruction_index, program_id, instruction);
+
             invoke_context.record_top_level_instruction(
                 instruction.decompile(message).map_err(|err| {
                     TransactionError::InstructionError(instruction_index as u8, err)
@@ -104,6 +106,7 @@ impl MessageProcessor {
                 .is_active(&prevent_calling_precompiles_as_programs::id())
                 && is_precompile(program_id, |id| invoke_context.feature_set.is_active(id))
             {
+                println!("is precompile");
                 // Precompiled programs don't have an instruction processor
                 continue;
             }

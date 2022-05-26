@@ -22,10 +22,12 @@ use solana_program_runtime::{
         ComputeMeter,
         BuiltinProgram,
         Executors,
+        TransactionAccountRefCell,
     },
     log_collector::LogCollector,
     sysvar_cache::SysvarCache,
     stable_log,
+    timings::ExecuteTimings,
 };
 use solana_rbpf::{elf::Executable, vm::Config};
 use solana_sdk::{
@@ -41,16 +43,40 @@ use solana_sdk::{
     sysvar,
     slot_hashes::SlotHashes,
     keyed_account::keyed_account_at_index,
+    native_loader,
+    message::{
+        SanitizedMessage,
+        Message,
+    },
+    secp256k1_program,
+    secp256k1_instruction::new_secp256k1_instruction,
+    instruction::InstructionError,
+    instruction::Instruction
 };
-use solana_sdk::account::ReadableAccount;
-use solana_runtime::{builtins, bank::BuiltinPrograms};
+
+use solana_runtime::{
+    builtins,
+    bank::BuiltinPrograms,
+    message_processor::MessageProcessor,
+
+};
 use std::borrow::Borrow;
 use std::{ fmt::Debug, pin::Pin};
 
 
 use solana_sdk::{
-    feature_set::do_support_realloc
+    feature_set::do_support_realloc,
+    transaction::{TransactionError},
+    precompiles::verify_if_precompile,
 };
+use std::fs::File;
+use std::io::BufWriter;
+use std::ops::Deref;
+
+use libsecp256k1::{SecretKey, Signature};
+use libsecp256k1::PublicKey;
+use solana_sdk::account::{WritableAccount, ReadableAccount};
+use std::collections::BTreeMap;
 
 
 fn fill_sysvar_cache() -> SysvarCache {
@@ -82,11 +108,12 @@ fn fill_sysvar_cache() -> SysvarCache {
 
 fn execute(
     contract: &Vec<u8>,
-    features: FeatureSet,
-    keyed_accounts: Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>)>,
-    ix_data : &Vec<u8>,
+    features: Arc<FeatureSet>,
+    accounts_ordered: &Vec<TransactionAccountRefCell>,
     logs: &Rc<RefCell<LogCollector>>,
     program_indices : &[usize],
+    message :&SanitizedMessage,
+    ix_index : usize
 )-> Result<u64, anyhow::Error>{
 
     let config = Config {
@@ -97,7 +124,7 @@ fn execute(
 
     let loader_id = bpf_loader::id();
 
-    let preparation = prepare_mock_invoke_context(program_indices, ix_data, &keyed_accounts);
+    // let preparation = prepare_mock_invoke_context(program_indices, ix_data, &keyed_accounts_o);
 
     let sysvar_cache = fill_sysvar_cache();
 
@@ -120,13 +147,13 @@ fn execute(
 
     let mut invoke_context = InvokeContext::new(
         Rent::default(),
-        &preparation.accounts,
+        &accounts_ordered.as_slice(),
         &builtin_programs.vec,
         Cow::Borrowed(&sysvar_cache),
         Some(Rc::clone(&logs)),
         compute_budget,
         Rc::new(RefCell::new(Executors::default())),
-        Arc::new(features),
+        features,
         Hash::default(),
         5_000,
         0,
@@ -135,31 +162,44 @@ fn execute(
 
     invoke_context
         .push(
-            &preparation.message,
-            &preparation.message.instructions()[0],
+            &message,
+            &message.instructions()[ix_index],
             program_indices,
-            &preparation.account_indices,
+            &[],
         )
         .unwrap();
 
     let keyed_accounts = invoke_context.get_keyed_accounts().unwrap();
-    let program = keyed_account_at_index(keyed_accounts, 1)?;
-    let program_id = *program.unsigned_key();
+    // let program = keyed_account_at_index(keyed_accounts, 1)?;
+
+    let ix_program_id = *program_indices.last().unwrap();
+    let program_id = keyed_account_at_index(keyed_accounts, ix_program_id)?.unsigned_key();
+
+    // let program = keyed_account_at_index(keyed_accounts, 0)?;
+    // let program_id = *program.unsigned_key();
     let stack_height = invoke_context.get_stack_height();
     let log_collector = invoke_context.get_log_collector();
 
     let compute_meter = invoke_context.get_compute_meter();
     let mut instruction_meter = ThisInstructionMeter {compute_meter: compute_meter.clone() };
 
+
     let res =
     {
         let (mut parameter_bytes, account_lengths) = serialize_parameters(
-            keyed_accounts[0].unsigned_key(),
-            keyed_accounts[1].unsigned_key(),
-            &keyed_accounts[2..],
-            ix_data,
+            &keyed_accounts[ix_program_id].owner().unwrap(),
+            keyed_accounts[ix_program_id].unsigned_key(),
+            &keyed_accounts[ix_program_id + 1..],
+            message.instructions()[ix_index].data.as_slice(),
         )
             .unwrap();
+        // let (mut parameter_bytes, account_lengths) = serialize_parameters(
+        //     keyed_accounts[0].unsigned_key(),
+        //     keyed_accounts[1].unsigned_key(),
+        //     &keyed_accounts[2..],
+        //     ix_data,
+        // )
+        //     .unwrap();
 
         let invoke_context_mut = &mut invoke_context;
         let syscall_registry = register_syscalls(invoke_context_mut).unwrap();
@@ -191,6 +231,7 @@ fn execute(
 
                 let start_time = Instant::now();
                 let before: u64 = compute_meter.try_borrow().unwrap().get_remaining();
+
                 let result = vm.execute_program_jit(&mut instruction_meter);
                 let after:u64 = compute_meter.try_borrow().unwrap().get_remaining();
 
@@ -199,16 +240,17 @@ fn execute(
                 drop(vm);
 
                 let keyed_accounts =  invoke_context_mut.get_keyed_accounts()?;
-                let first_instruction_account = 1;
+                // let first_instruction_account = 1;
                 deserialize_parameters(
                     &loader_id,
-                    &keyed_accounts[first_instruction_account + 1..],
+                    &keyed_accounts[ix_program_id + 1..],
                     parameter_bytes.as_slice(),
                     &account_lengths,
                     invoke_context_mut
                         .feature_set
                         .is_active(&do_support_realloc::id()),
                 );
+
                 println!(
                     "Executed {}  instructions in {:.2}s.",
                     instruction_count,
@@ -217,13 +259,16 @@ fn execute(
 
                 println!(
                     "Program  {} consumed {} of {} compute units",
-                    &program_id,
+                    program_id,
                     before - after,
                     before
                 );
-
                 result
         };
+
+        for i in accounts_ordered{
+            println!("{:?}", i);
+        }
         result
     };
 
@@ -235,28 +280,82 @@ fn execute(
     else{
         stable_log::program_return(&log_collector, &program_id, &vec![]);
     }
+
+
     res.map_err(|e| {anyhow!("exit code: {}", e)})
 }
 
+
+/// Verify the precompiled programs in this transaction.
+pub fn verify_precompiles(message: &SanitizedMessage, feature_set: &Arc<FeatureSet>) -> Result<(), TransactionError> {
+    for instruction in message.instructions() {
+        // The Transaction may not be sanitized at this point
+        if instruction.program_id_index as usize >= message.account_keys_len() {
+            return Err(TransactionError::AccountNotFound);
+        }
+        let program_id = &message.account_keys_iter().nth(instruction.program_id_index as usize).unwrap();
+
+        verify_if_precompile(
+            program_id,
+            instruction,
+            &message.instructions(),
+            feature_set,
+        )
+            .map_err(|_| TransactionError::InvalidAccountIndex)?;
+    }
+    Ok(())
+}
+
+
 pub fn run(
     contract: &Vec<u8>,
-    features: FeatureSet,
-    keyed_accounts: Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>)>,
-    ix_data : &Vec<u8>,
+    features: &Arc<FeatureSet>,
+    accounts: &BTreeMap<Pubkey, Rc<RefCell<AccountSharedData>>>,
     program_indices : &[usize],
-
+    message: &SanitizedMessage,
 ) -> Result<(), anyhow::Error> {
+
+    // secp256k1_program
+    verify_precompiles(message, features).map_err(|e| anyhow!("precompile instruction error: {:?}", e )).unwrap();
 
     let logs = Rc::new(RefCell::new(LogCollector::default()));
 
-    let result = execute(
-        contract,
-        features,
-        keyed_accounts,
-        ix_data,
-        &logs,
-        program_indices
-    );
+    let mut accounts_ordered :Vec<TransactionAccountRefCell> = Vec::new();
+
+    for key in message.account_keys_iter() {
+        let value : TransactionAccountRefCell = (*key, Rc::new(*accounts.get(key).unwrap().clone()));
+        accounts_ordered.push(value );
+    }
+
+    for ix_index in 0..message.instructions().len(){
+        let result = execute(
+            contract,
+            features.clone(),
+            &accounts_ordered,
+            &logs,
+            program_indices,
+            message,
+            ix_index,
+        );
+
+        // match result {
+        //     Ok(exit_code) => {
+        //         if exit_code != SUCCESS {
+        //             Err(anyhow!("exit code: {}", exit_code))
+        //         }
+        //     }
+        //     Err(e) => {
+        //         //     if false {
+        //         //         let trace = File::create("trace.out").unwrap();
+        //         //         let mut trace = BufWriter::new(trace);
+        //         //         let analysis =
+        //         //             solana_rbpf::static_analysis::Analysis::from_executable(executable.as_ref());
+        //         //         vm.get_tracer().write(&mut trace, &analysis).unwrap();
+        //         //     }
+        //         Err(e.into())
+        //     }
+        // }
+    }
 
     println!("");
     if let Ok(logs) = Rc::try_unwrap(logs) {
@@ -267,26 +366,9 @@ pub fn run(
         }
     }
 
-    match result {
-        Ok(exit_code) => {
-            if exit_code == SUCCESS {
-                Ok(())
-            } else {
-                Err(anyhow!("exit code: {}", exit_code))
-            }
-        }
-        Err(e) => {
-            // if false {
-            //     let trace = File::create("trace.out").unwrap();
-            //     let mut trace = BufWriter::new(trace);
-            //     let analysis =
-            //         solana_rbpf::static_analysis::Analysis::from_executable(executable.as_ref());
-            //     vm.get_tracer().write(&mut trace, &analysis).unwrap();
-            // }
-            Err(e.into())
-        }
-    }
+    Ok(())
 }
+
 
 
 

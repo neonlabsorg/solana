@@ -737,7 +737,7 @@ impl<'a> InvokeContext<'a> {
         caller_write_privileges: &[bool],
         timings: &mut ExecuteTimings,
     ) -> ProcessInstructionResult {
-        // println!("process_instruction !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ");
+        println!("process_instruction !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ");
         let is_lowest_invocation_level = self.invoke_stack.is_empty();
         if !is_lowest_invocation_level {
             // Verify the calling program hasn't misbehaved

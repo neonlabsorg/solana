@@ -14,8 +14,16 @@ use solana_sdk::{
     native_loader,
     pubkey::Pubkey,
     system_program,
-    transaction
+    transaction,
+    instruction::{Instruction, AccountMeta},
+    message::{
+        SanitizedMessage,
+        Message,
+    },
+
 };
+use solana_program_runtime::invoke_context::TransactionAccountRefCell;
+
 use std::{
     str::FromStr,
     cell::RefCell,
@@ -30,7 +38,7 @@ use crate::evm_instructions::{
     system_shared,
     evm_loader_str
 };
-
+use std::collections::BTreeMap;
 
 
 pub fn process(
@@ -39,60 +47,54 @@ pub fn process(
 
     let evm_contract = read_elf::read_so(opt)?;
 
-    let evm_loader = Pubkey::from_str(&evm_loader_str)?;
+    let evm_loader_key = Pubkey::from_str(&evm_loader_str)?;
 
     let ether_address = H160::default();
     let program_seeds = [ &[ACCOUNT_SEED_VERSION], ether_address.as_bytes()];
-    let  (new_account, nonce) = Pubkey::find_program_address(&program_seeds, &evm_loader);
+    let  (new_account_key, nonce) = Pubkey::find_program_address(&program_seeds, &evm_loader_key);
 
-    let operator =  Pubkey::new_unique();
-    let program_indices = [0, 1];
+    let operator_key =  Pubkey::new_unique();
+    // let program_indices = [0, 1];
+    let program_indices = [0];
 
 
-    println!("new_acc: {}, {}", ether_address, new_account);
-    println!("operator: {}", operator);
+    println!("new_acc: {}, {}", ether_address, new_account_key);
+    println!("operator: {}", operator_key);
 
-    let keyed_accounts: Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>)> =  vec![
-        (
-            false,
-            false,
-            bpf_loader::id(),
-            Rc::new(RefCell::new(bpf_loader_shared()))
-        ),
-        (
-            false,
-            false,
-            evm_loader,
-            Rc::new(RefCell::new(evm_loader_shared()))
-        ),
-        (
-            true,
-            true,
-            operator,
-            AccountSharedData::new_ref(1_000_000_000, 0, &system_program::id()),
-        ),
-        (
-            false,
-            false,
-            system_program::id(),
-            Rc::new(RefCell::new(system_shared()))
-        ),
-        (
-            false,
-            true,
-            new_account,
-            AccountSharedData::new_ref(0, 0, &system_program::id()),
-        ),
-    ];
+    let mut accounts = BTreeMap::from([
+        ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared())) ),
+        ( operator_key, AccountSharedData::new_ref(1_000_000_000, 0, &system_program::id()) ),
+        ( system_program::id(), Rc::new(RefCell::new(system_shared())) ),
+        ( new_account_key, AccountSharedData::new_ref(0, 0, &system_program::id()) ),
+    ]);
 
     let ix_data: Vec<u8>= serialize(&(24_u8, ether_address.as_fixed_bytes(), nonce)).unwrap();
 
 
+    let meta = vec![
+        AccountMeta::new(operator_key, true),
+        AccountMeta::new_readonly(system_program::id(), false),
+        AccountMeta::new(new_account_key, false),
+    ];
+
+    let instruction = Instruction::new_with_bytes(
+        evm_loader_key,
+        ix_data.as_slice(),
+        meta
+    );
+
+    let message = SanitizedMessage::Legacy(Message::new(
+        &[instruction],
+        None,
+    ));
+
+    let features =  feature_set();
+
     vm::run(
         &evm_contract,
-        feature_set(),
-        keyed_accounts,
-        &ix_data,
+        &features,
+        &accounts,
         &program_indices,
+        &message,
     )
 }

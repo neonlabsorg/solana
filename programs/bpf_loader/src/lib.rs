@@ -234,6 +234,7 @@ pub fn create_vm<'a, 'b>(
             .borrow_mut()
             .consume((heap_size as u64 / (32 * 1024)).saturating_sub(1) * compute_budget.heap_cost);
     }
+
     let mut heap =
         AlignedMemory::new_with_size(compute_budget.heap_size.unwrap_or(HEAP_LENGTH), HOST_ALIGN);
     let mut vm = EbpfVm::new(program, heap.as_slice_mut(), parameter_bytes)?;
@@ -1059,8 +1060,12 @@ impl Executor for BpfExecutor {
                 invoke_context,
                 &account_lengths,
             ) {
-                Ok(info) => info,
+                Ok(info) => {
+                    println!("create vm ok");
+                    info
+                },
                 Err(e) => {
+                    println!("create vm error");
                     ic_logger_msg!(log_collector, "Failed to create BPF VM: {}", e);
                     return Err(InstructionError::ProgramEnvironmentSetupFailure);
                 }
@@ -1071,11 +1076,13 @@ impl Executor for BpfExecutor {
             stable_log::program_invoke(&log_collector, &program_id, stack_height);
             let mut instruction_meter = ThisInstructionMeter::new(compute_meter.clone());
             let before = compute_meter.borrow().get_remaining();
+            println!("vm will execute");
             let result = if use_jit {
                 vm.execute_program_jit(&mut instruction_meter)
             } else {
                 vm.execute_program_interpreted(&mut instruction_meter)
             };
+            println!("vm executed");
             let after = compute_meter.borrow().get_remaining();
             ic_logger_msg!(
                 log_collector,

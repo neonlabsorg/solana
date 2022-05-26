@@ -1290,6 +1290,7 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallKeccak256<'a, 'b> {
         memory_mapping: &MemoryMapping,
         result: &mut Result<u64, EbpfError<BpfError>>,
     ) {
+        println!("SyscallKeccak256::call()");
         let invoke_context = question_mark!(
             self.invoke_context
                 .try_borrow()
