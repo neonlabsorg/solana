@@ -1,3 +1,8 @@
+use crate::evm_instructions::{
+    evm_loader_str,
+    evm_loader_shared,
+};
+
 use anyhow::{anyhow};
 use std::{
     cell::RefCell,
@@ -39,7 +44,6 @@ use solana_sdk::{
     clock::Clock,
     sysvar::fees::Fees,
     epoch_schedule::EpochSchedule,
-    // transaction_context::TransactionAccount,
     sysvar,
     slot_hashes::SlotHashes,
     keyed_account::keyed_account_at_index,
@@ -71,13 +75,12 @@ use solana_sdk::{
 };
 use std::fs::File;
 use std::io::BufWriter;
-use std::ops::Deref;
+use std::ops::{Deref, Index};
 
 use libsecp256k1::{SecretKey, Signature};
 use libsecp256k1::PublicKey;
 use solana_sdk::account::{WritableAccount, ReadableAccount};
 use std::collections::BTreeMap;
-
 
 fn fill_sysvar_cache() -> SysvarCache {
     let mut sysvar_cache =  SysvarCache::default();
@@ -111,10 +114,11 @@ fn execute(
     features: Arc<FeatureSet>,
     accounts_ordered: &Vec<TransactionAccountRefCell>,
     logs: &Rc<RefCell<LogCollector>>,
-    program_indices : &[usize],
+    program_index :usize,
+    instruction_index :usize,
     message :&SanitizedMessage,
-    ix_index : usize
 )-> Result<u64, anyhow::Error>{
+
 
     let config = Config {
         max_call_depth: 100,
@@ -163,45 +167,35 @@ fn execute(
     invoke_context
         .push(
             &message,
-            &message.instructions()[ix_index],
-            program_indices,
+            &message.instructions()[instruction_index],
+            &vec![program_index],
             &[],
         )
         .unwrap();
 
-    let keyed_accounts = invoke_context.get_keyed_accounts().unwrap();
-    // let program = keyed_account_at_index(keyed_accounts, 1)?;
+    // let keyed_accounts = invoke_context.get_keyed_accounts().unwrap();
 
-    let ix_program_id = *program_indices.last().unwrap();
-    let program_id = keyed_account_at_index(keyed_accounts, ix_program_id)?.unsigned_key();
+    // let program_id = keyed_account_at_index(keyed_accounts, 0)?.unsigned_key();
+    let program_id = &accounts_ordered[program_index].0;
 
-    // let program = keyed_account_at_index(keyed_accounts, 0)?;
-    // let program_id = *program.unsigned_key();
     let stack_height = invoke_context.get_stack_height();
     let log_collector = invoke_context.get_log_collector();
 
     let compute_meter = invoke_context.get_compute_meter();
     let mut instruction_meter = ThisInstructionMeter {compute_meter: compute_meter.clone() };
 
-
     let res =
     {
+        let invoke_context_mut = &mut invoke_context;
+        let keyed_accounts = invoke_context_mut.get_keyed_accounts().unwrap();
         let (mut parameter_bytes, account_lengths) = serialize_parameters(
-            &keyed_accounts[ix_program_id].owner().unwrap(),
-            keyed_accounts[ix_program_id].unsigned_key(),
-            &keyed_accounts[ix_program_id + 1..],
-            message.instructions()[ix_index].data.as_slice(),
+            &keyed_accounts[0].owner().unwrap(),
+            keyed_accounts[0].unsigned_key(),
+            &keyed_accounts[1..],
+            message.instructions()[instruction_index].data.as_slice(),
         )
             .unwrap();
-        // let (mut parameter_bytes, account_lengths) = serialize_parameters(
-        //     keyed_accounts[0].unsigned_key(),
-        //     keyed_accounts[1].unsigned_key(),
-        //     &keyed_accounts[2..],
-        //     ix_data,
-        // )
-        //     .unwrap();
 
-        let invoke_context_mut = &mut invoke_context;
         let syscall_registry = register_syscalls(invoke_context_mut).unwrap();
         let mut executable =
             match Executable::<BpfError, ThisInstructionMeter>::from_elf(
@@ -243,7 +237,7 @@ fn execute(
                 // let first_instruction_account = 1;
                 deserialize_parameters(
                     &loader_id,
-                    &keyed_accounts[ix_program_id + 1..],
+                    &keyed_accounts[1..],
                     parameter_bytes.as_slice(),
                     &account_lengths,
                     invoke_context_mut
@@ -311,7 +305,7 @@ pub fn run(
     contract: &Vec<u8>,
     features: &Arc<FeatureSet>,
     accounts: &BTreeMap<Pubkey, Rc<RefCell<AccountSharedData>>>,
-    program_indices : &[usize],
+    // program_indices : &[usize],
     message: &SanitizedMessage,
 ) -> Result<(), anyhow::Error> {
 
@@ -323,38 +317,35 @@ pub fn run(
     let mut accounts_ordered :Vec<TransactionAccountRefCell> = Vec::new();
 
     for key in message.account_keys_iter() {
-        let value : TransactionAccountRefCell = (*key, Rc::new(*accounts.get(key).unwrap().clone()));
+        println!("key {}", key);
+        let value : TransactionAccountRefCell = (*key, accounts.get(key).unwrap().clone() );
         accounts_ordered.push(value );
     }
+    let evm_loader_key = Pubkey::from_str(&evm_loader_str)?;
 
-    for ix_index in 0..message.instructions().len(){
+    let program_index = accounts_ordered.iter().position(|item|item.0 == evm_loader_key ).unwrap();
+
+    for instruction_index in 0..message.instructions().len(){
         let result = execute(
             contract,
             features.clone(),
             &accounts_ordered,
             &logs,
-            program_indices,
+            program_index,
+            instruction_index,
             message,
-            ix_index,
         );
 
-        // match result {
-        //     Ok(exit_code) => {
-        //         if exit_code != SUCCESS {
-        //             Err(anyhow!("exit code: {}", exit_code))
-        //         }
-        //     }
-        //     Err(e) => {
-        //         //     if false {
-        //         //         let trace = File::create("trace.out").unwrap();
-        //         //         let mut trace = BufWriter::new(trace);
-        //         //         let analysis =
-        //         //             solana_rbpf::static_analysis::Analysis::from_executable(executable.as_ref());
-        //         //         vm.get_tracer().write(&mut trace, &analysis).unwrap();
-        //         //     }
-        //         Err(e.into())
-        //     }
-        // }
+        match result {
+            Ok(exit_code) => {
+                if exit_code != SUCCESS {
+                    return Err(anyhow!("exit code: {}", exit_code))
+                }
+            }
+            Err(e) => {
+                return  Err(anyhow!("error: {:?}", e) )
+            }
+         }
     }
 
     println!("");

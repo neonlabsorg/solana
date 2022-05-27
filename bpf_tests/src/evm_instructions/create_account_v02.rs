@@ -55,13 +55,13 @@ pub fn process(
 
     let operator_key =  Pubkey::new_unique();
     // let program_indices = [0, 1];
-    let program_indices = [0];
+    // let program_indices = [0];
 
 
     println!("new_acc: {}, {}", ether_address, new_account_key);
     println!("operator: {}", operator_key);
 
-    let mut accounts = BTreeMap::from([
+    let  accounts = BTreeMap::from([
         ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared())) ),
         ( operator_key, AccountSharedData::new_ref(1_000_000_000, 0, &system_program::id()) ),
         ( system_program::id(), Rc::new(RefCell::new(system_shared())) ),
@@ -94,7 +94,7 @@ pub fn process(
         &evm_contract,
         &features,
         &accounts,
-        &program_indices,
+        // &program_indices,
         &message,
     )
 }
