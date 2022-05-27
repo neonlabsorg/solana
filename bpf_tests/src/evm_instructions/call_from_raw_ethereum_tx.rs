@@ -1,3 +1,4 @@
+use crate::evm_instructions::keccak_secp256k1::make_keccak_instruction;
 use crate::read_elf;
 use crate::program_options;
 use crate::vm;
@@ -15,6 +16,11 @@ use solana_sdk::{
     native_loader,
     system_program,
     sysvar::instructions,
+    instruction::{Instruction, AccountMeta},
+    message::{
+        SanitizedMessage,
+        Message,
+    }
 };
 
 use solana_program:: {
@@ -28,6 +34,7 @@ use std::{
     rc::Rc,
     fs::File,
     io::prelude::*,
+    collections::BTreeMap,
 };
 
 use solana_sdk::account::{WritableAccount, ReadableAccount};
@@ -68,15 +75,13 @@ use std::cell::RefMut;
 
 
 
+
 pub fn read_contract(file_name: &str)->std::io::Result<Vec<u8>> {
     let mut f = File::open(file_name)?;
     let mut bin = vec![];
     f.read_to_end(&mut bin)?;
     Ok(bin)
 }
-
-
-
 
 
 
@@ -94,7 +99,11 @@ pub fn account_info<'a>(key: &'a Pubkey, account: &'a mut Account) -> AccountInf
 }
 
 
-pub fn account_set() -> (Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>)>, Vec<u8>){
+pub fn process(
+    opt: &program_options::Opt
+) -> Result<(), anyhow::Error> {
+
+    let evm_contract = read_elf::read_so(opt)?;
 
     let evm_loader_key = Pubkey::from_str(&evm_loader_str).unwrap();
     let operator_key= solana_sdk::pubkey::Pubkey::new_from_array(AUTHORIZED_OPERATOR_LIST[0].to_bytes());
@@ -124,16 +133,6 @@ pub fn account_set() -> (Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>
     let (mut tag, mut bytes) = caller_shared.data_mut().split_first_mut().expect("error");
     *tag = 10;
     caller.pack(bytes);
-
-    // let mut caller_account = Account::new(1_000_000_000, ether_account::Data::SIZE+1, &evm_loader_key);
-    // let caller_shared = AccountSharedData::from(caller_account);
-    // let caller_info = account_info(&caller_key, &mut caller_account);
-    // let a = caller_info.try_borrow_data().unwrap();
-    // let caller_shared = AccountSharedData::new_data(caller_info.lamports(), *a, caller_info.owner).unwrap();
-    // let a  = evm_loader::solana_program::account_info::AccountInfo::from( caller_info);
-    // let init = AccountData::init(&a, caller).unwrap();
-
-
 
     // contract
     let contract_address = H160::from_str("0000000000000000000000000000000000000002").unwrap();
@@ -165,35 +164,54 @@ pub fn account_set() -> (Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>
     let (mut tag, mut bytes) = code_shared.data_mut().split_first_mut().expect("error");
     let (data, remainig) = bytes.split_at_mut(ether_contract::Data::SIZE);
     code.pack(data);
-    remainig.copy_from_slice(hello_world.as_slice());
+    remainig[..hello_world.len()].copy_from_slice(hello_world.as_slice());
     *tag = 2;   // TAG_CONTRACT
 
-    let code_size = code.code_size as usize;
+    // let code_size = code.code_size as usize;
     // let valids_size = (code_size / 8) + 1;
 
 
     let token_key = Pubkey::new_from_array(spl_token::id().to_bytes());
 
-    let keyed_accounts: Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>)> =  vec![
-        (false, false, bpf_loader::id(), Rc::new(RefCell::new(bpf_loader_shared()))),
-        (false, false, evm_loader_key, Rc::new(RefCell::new(evm_loader_shared()))),
+    let keccak_key = Pubkey::from_str("KeccakSecp256k11111111111111111111111111111").unwrap();
 
-        (false, false, instructions::id(), Rc::new(RefCell::new(sysvar_shared()))),
 
-        (true, true, operator_key, AccountSharedData::new_ref(1_000_000_000, 0, &system_program::id())),
+    let mut keccak_shared = AccountSharedData::new(0, 17, &native_loader::id());
+    keccak_shared.set_executable(true);
+    let mut data= keccak_shared.data_mut().as_mut_slice();
+    data.copy_from_slice(String::from("secp256k1_program").as_bytes());
 
-        (false, true, treasury_key, AccountSharedData::new_ref(0, 0, &evm_loader_key)),
+    let  accounts = BTreeMap::from([
+        ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared())) ),
+        (instructions::id(), Rc::new(RefCell::new(sysvar_shared()))),
 
-        (false, true, caller_key, Rc::new(RefCell::new(caller_shared))),
+        (operator_key, AccountSharedData::new_ref(1_000_000_000, 0, &system_program::id())),
 
-        (false, false, system_program::id(), Rc::new(RefCell::new(system_shared()))),
+        (treasury_key, AccountSharedData::new_ref(0, 0, &evm_loader_key)),
 
-        (false, false, evm_loader_key, Rc::new(RefCell::new(evm_loader_shared()))),
+        (caller_key, Rc::new(RefCell::new(caller_shared))),
 
-        (false, true, contract_key, Rc::new(RefCell::new(contract_shared))),
-        (false, true, code_key, Rc::new(RefCell::new(code_shared))),
+        (system_program::id(), Rc::new(RefCell::new(system_shared()))),
 
-        (false, false, token_key, AccountSharedData::new_ref(0, 0, &bpf_loader::id())),
+        (evm_loader_key, Rc::new(RefCell::new(evm_loader_shared()))),
+
+        (contract_key, Rc::new(RefCell::new(contract_shared))),
+        (code_key, Rc::new(RefCell::new(code_shared))),
+
+        (token_key, AccountSharedData::new_ref(0, 0, &bpf_loader::id())),
+        (keccak_key, Rc::new(RefCell::new(keccak_shared) )),
+    ]);
+
+    let meta = vec![
+        AccountMeta::new_readonly(instructions::id(), false),
+        AccountMeta::new(operator_key, true),
+        AccountMeta::new(treasury_key, false),
+        AccountMeta::new(caller_key, false),
+        AccountMeta::new_readonly(system_program::id(), false),
+        AccountMeta::new_readonly(evm_loader_key, false),
+        AccountMeta::new(contract_key, false),
+        AccountMeta::new(code_key, false),
+        AccountMeta::new_readonly(token_key, false),
     ];
 
     println!("operator_key {}", operator_key);
@@ -202,10 +220,8 @@ pub fn account_set() -> (Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>
     println!("contract_key {}", contract_key);
     println!("code_key {}", code_key);
 
-    // println!("caller_shared.data: {:?}", cal/ler_shared.data());
 
-
-    let (sig, msg) = make_ethereum_transaction(caller.trx_count, contract.address);
+    let (sig, msg) = make_ethereum_transaction(caller.trx_count, &contract.address);
     let mut ix_data:Vec<u8> = Vec::new();
     ix_data.push(5_u8);
     ix_data.extend_from_slice(&treasury_index.to_le_bytes());
@@ -213,24 +229,27 @@ pub fn account_set() -> (Vec<(bool, bool, Pubkey, Rc<RefCell<AccountSharedData>>
     ix_data.extend_from_slice(sig.as_slice());
     ix_data.extend_from_slice(msg.as_slice());
 
-    (keyed_accounts, ix_data)
-}
 
+    let instruction_05 = Instruction::new_with_bytes(
+        evm_loader_key,
+        ix_data.as_slice(),
+        meta
+    );
 
-pub fn process(
-    opt: &program_options::Opt
-) -> Result<(), anyhow::Error> {
+    let instruction_keccak = make_keccak_instruction(&contract.address).unwrap();
 
-    let evm_contract = read_elf::read_so(opt)?;
+    let message = SanitizedMessage::Legacy(Message::new(
+        &[instruction_keccak, instruction_05 ],
+        None,
+    ));
 
-    let (keyed_accounts, ix_data) = account_set();
-    let program_indices = [0, 1];
+    let features =  feature_set();
 
     vm::run(
         &evm_contract,
-        feature_set(),
-        keyed_accounts,
-        &ix_data,
-        &program_indices,
+        &features,
+        &accounts,
+        &message,
     )
+
 }

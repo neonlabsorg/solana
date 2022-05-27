@@ -1,6 +1,6 @@
 pub mod create_account_v02;
-// pub mod call_from_raw_ethereum_tx;
-// pub mod keccak_secp256k1;
+pub mod call_from_raw_ethereum_tx;
+pub mod keccak_secp256k1;
 
 use std::sync::Arc;
 
@@ -119,7 +119,7 @@ fn keccak256(data: &[u8]) -> [u8; 32] {
 
 pub fn make_ethereum_transaction(
     trx_count: u64,
-    to: H160,
+    to: &H160,
 ) -> (Vec<u8>, Vec<u8>) {
 
     let pk_hex: &[u8] = "0510266f7d37f0957564e4ce1a1dcc8bb3408383634774a2f4a94a35f4bc53e0".as_bytes();
@@ -130,7 +130,7 @@ pub fn make_ethereum_transaction(
 
     let rlp_data = {
         let tx = UnsignedTransaction {
-            to: Some(to),
+            to: Some(*to),
             nonce: trx_count,
             gas_limit: 9_999_999_999_u64.into(),
             gas_price: 10_u64.pow(9).into(),

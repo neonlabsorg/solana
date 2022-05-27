@@ -10,6 +10,7 @@ use solana_program::account_info::AccountInfo;
 
 use solana_sdk::{
     account::{AccountSharedData,  Account},
+    instruction::{Instruction, AccountMeta},
     // account_info::AccountInfo,
     bpf_loader,
     native_loader,
@@ -28,6 +29,7 @@ use std::{
     rc::Rc,
     fs::File,
     io::prelude::*,
+    collections::BTreeMap,
 };
 
 use solana_sdk::account::{WritableAccount, ReadableAccount};
@@ -100,37 +102,23 @@ fn make_keccak_instruction_data(instruction_index : u8, msg_len: u16, data_start
 }
 
 
-pub fn process(
-    opt: &program_options::Opt
-) -> Result<(), anyhow::Error> {
-
+pub fn make_keccak_instruction(contract_address : &H160,) -> Result<(Instruction), anyhow::Error> {
 
     let keccakprog = Pubkey::from_str("KeccakSecp256k11111111111111111111111111111").unwrap();
 
-    let mut keccak_shared = AccountSharedData::new(0, 17, &native_loader::id());
-    keccak_shared.set_executable(true);
-    let mut data= keccak_shared.data_mut().as_mut_slice();
-    data.copy_from_slice(String::from("secp256k1_program").as_bytes());
-
-    let keyed_accounts: Vec<(Pubkey, Rc<RefCell<AccountSharedData>>)> =  vec![
-        // (false, false, native_loader::id(), Rc::new(RefCell::new(bpf_loader_shared()))),
-        // (false, false, bpf_loader::id(), Rc::new(RefCell::new(bpf_loader_shared()))),
-
-        (keccakprog, Rc::new(RefCell::new(keccak_shared))),
-        (instructions::id(), Rc::new(RefCell::new(sysvar_shared()))),
+    let meta = vec![
+        AccountMeta::new(keccakprog, false),
     ];
-
-    let contract_address = H160::from_str("0000000000000000000000000000000000000002").unwrap();
     let (_sig, msg) = make_ethereum_transaction(0, contract_address);
 
     let ix_data = make_keccak_instruction_data(1, msg.len() as u16, 5);
 
 
-    vm::run_precompile(
-        feature_set(),
-        keyed_accounts,
-        &ix_data,
-    )
+    let instruction = Instruction::new_with_bytes(
+        keccakprog,
+        ix_data.as_slice(),
+        meta
+    );
 
-
+    Ok(instruction)
 }

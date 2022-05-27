@@ -119,16 +119,13 @@ fn execute(
     message :&SanitizedMessage,
 )-> Result<u64, anyhow::Error>{
 
-
     let config = Config {
         max_call_depth: 100,
         enable_instruction_tracing: false,
         ..Config::default()
     };
 
-    let loader_id = bpf_loader::id();
-
-    // let preparation = prepare_mock_invoke_context(program_indices, ix_data, &keyed_accounts_o);
+    let program_id = &accounts_ordered[program_index].0;
 
     let sysvar_cache = fill_sysvar_cache();
 
@@ -173,98 +170,70 @@ fn execute(
         )
         .unwrap();
 
-    // let keyed_accounts = invoke_context.get_keyed_accounts().unwrap();
-
-    // let program_id = keyed_account_at_index(keyed_accounts, 0)?.unsigned_key();
-    let program_id = &accounts_ordered[program_index].0;
-
     let stack_height = invoke_context.get_stack_height();
     let log_collector = invoke_context.get_log_collector();
-
     let compute_meter = invoke_context.get_compute_meter();
     let mut instruction_meter = ThisInstructionMeter {compute_meter: compute_meter.clone() };
 
-    let res =
-    {
-        let invoke_context_mut = &mut invoke_context;
-        let keyed_accounts = invoke_context_mut.get_keyed_accounts().unwrap();
-        let (mut parameter_bytes, account_lengths) = serialize_parameters(
-            &keyed_accounts[0].owner().unwrap(),
-            keyed_accounts[0].unsigned_key(),
-            &keyed_accounts[1..],
-            message.instructions()[instruction_index].data.as_slice(),
-        )
-            .unwrap();
+    let invoke_context_mut = &mut invoke_context;
 
-        let syscall_registry = register_syscalls(invoke_context_mut).unwrap();
-        let mut executable =
-            match Executable::<BpfError, ThisInstructionMeter>::from_elf(
-                contract,
-                None,
-                config,
-                syscall_registry,
-            ){
-                Ok(a) => a,
-                Err(e) => {
-                    println! ("error {}", e);
-                    return Err(anyhow!(""));
-                }
-            };
-        Executable::<BpfError, ThisInstructionMeter>::jit_compile(&mut executable).unwrap();
+    let  keyed_accounts = invoke_context_mut.get_keyed_accounts().unwrap();
+    let (mut parameter_bytes, account_lengths) = serialize_parameters(
+        &keyed_accounts[0].owner().unwrap(),
+        keyed_accounts[0].unsigned_key(),
+        &keyed_accounts[1..],
+        message.instructions()[instruction_index].data.as_slice(),
+    )
+        .unwrap();
 
-        let result = {
-                let mut vm = create_vm(
-                    &executable,
-                    parameter_bytes.as_slice_mut(),
-                    invoke_context_mut,
-                    &account_lengths,
-                ).unwrap();
-
-                stable_log::program_invoke(&log_collector, &program_id, stack_height);
-
-
-                let start_time = Instant::now();
-                let before: u64 = compute_meter.try_borrow().unwrap().get_remaining();
-
-                let result = vm.execute_program_jit(&mut instruction_meter);
-                let after:u64 = compute_meter.try_borrow().unwrap().get_remaining();
-
-                let instruction_count = vm.get_total_instruction_count();
-
-                drop(vm);
-
-                let keyed_accounts =  invoke_context_mut.get_keyed_accounts()?;
-                // let first_instruction_account = 1;
-                deserialize_parameters(
-                    &loader_id,
-                    &keyed_accounts[1..],
-                    parameter_bytes.as_slice(),
-                    &account_lengths,
-                    invoke_context_mut
-                        .feature_set
-                        .is_active(&do_support_realloc::id()),
-                );
-
-                println!(
-                    "Executed {}  instructions in {:.2}s.",
-                    instruction_count,
-                    start_time.elapsed().as_secs_f64()
-                );
-
-                println!(
-                    "Program  {} consumed {} of {} compute units",
-                    program_id,
-                    before - after,
-                    before
-                );
-                result
+    let syscall_registry = register_syscalls(invoke_context_mut).unwrap();
+    let mut executable =
+        match Executable::<BpfError, ThisInstructionMeter>::from_elf(
+            contract,
+            None,
+            config,
+            syscall_registry,
+        ){
+            Ok(a) => a,
+            Err(e) => {
+                println! ("error {}", e);
+                return Err(anyhow!(""));
+            }
         };
+    Executable::<BpfError, ThisInstructionMeter>::jit_compile(&mut executable).unwrap();
 
-        for i in accounts_ordered{
-            println!("{:?}", i);
-        }
-        result
-    };
+    let mut vm = create_vm(
+        &executable,
+        parameter_bytes.as_slice_mut(),
+        invoke_context_mut,
+        &account_lengths,
+    ).unwrap();
+
+    stable_log::program_invoke(&log_collector, &program_id, stack_height);
+
+    let start_time = Instant::now();
+    let before: u64 = compute_meter.try_borrow().unwrap().get_remaining();
+
+    let result = vm.execute_program_jit(&mut instruction_meter);
+
+    let after:u64 = compute_meter.try_borrow().unwrap().get_remaining();
+    let instruction_count = vm.get_total_instruction_count();
+
+    drop(vm);
+
+    let keyed_accounts =  invoke_context_mut.get_keyed_accounts().unwrap();
+    deserialize_parameters(
+        &keyed_accounts[0].owner().unwrap(),
+        &keyed_accounts[1..],
+        parameter_bytes.as_slice(),
+        &account_lengths,
+        invoke_context_mut
+            .feature_set
+            .is_active(&do_support_realloc::id()),
+    );
+
+    println!("Executed {}  instructions in {:.2}s.", instruction_count, start_time.elapsed().as_secs_f64());
+    println!("Program  {} consumed {} of {} compute units", program_id, before - after, before);
 
     let  return_data = &invoke_context.return_data.1;
 
@@ -276,7 +245,7 @@ fn execute(
     }
 
 
-    res.map_err(|e| {anyhow!("exit code: {}", e)})
+    result.map_err(|e| {anyhow!("exit code: {}", e)})
 }
 
 
@@ -305,19 +274,20 @@ pub fn run(
     contract: &Vec<u8>,
     features: &Arc<FeatureSet>,
     accounts: &BTreeMap<Pubkey, Rc<RefCell<AccountSharedData>>>,
-    // program_indices : &[usize],
     message: &SanitizedMessage,
 ) -> Result<(), anyhow::Error> {
 
     // secp256k1_program
     verify_precompiles(message, features).map_err(|e| anyhow!("precompile instruction error: {:?}", e )).unwrap();
 
+    println!("verify_precompiles is completed");
+
     let logs = Rc::new(RefCell::new(LogCollector::default()));
 
     let mut accounts_ordered :Vec<TransactionAccountRefCell> = Vec::new();
 
     for key in message.account_keys_iter() {
-        println!("key {}", key);
+        // println!("key {}", key);
         let value : TransactionAccountRefCell = (*key, accounts.get(key).unwrap().clone() );
         accounts_ordered.push(value );
     }
@@ -326,6 +296,12 @@ pub fn run(
     let program_index = accounts_ordered.iter().position(|item|item.0 == evm_loader_key ).unwrap();
 
     for instruction_index in 0..message.instructions().len(){
+        let program_id = message.get_account_key(message.instructions()[instruction_index].program_id_index as usize).unwrap();
+        // execute only evm_loader instructions
+        if *program_id != evm_loader_key{
+            continue;
+        };
+
         let result = execute(
             contract,
             features.clone(),
@@ -339,22 +315,26 @@ pub fn run(
         match result {
             Ok(exit_code) => {
                 if exit_code != SUCCESS {
-                    return Err(anyhow!("exit code: {}", exit_code))
+                    println!("exit code: {}", exit_code)
                 }
             }
             Err(e) => {
-                return  Err(anyhow!("error: {:?}", e) )
+                println!("error: {:?}", e)
             }
          }
     }
 
-    println!("");
+    println!("logs:");
     if let Ok(logs) = Rc::try_unwrap(logs) {
         for message in Vec::from(logs.into_inner()) {
             // println!("{}", message);
             let _ = io::stdout().write_all(message.replace("Program log: ", "Program log: ").as_bytes());
             println!("");
         }
+    }
+
+    for i in accounts_ordered{
+        println!("{:?}", i);
     }
 
     Ok(())

@@ -54,8 +54,6 @@ pub fn process(
     let  (new_account_key, nonce) = Pubkey::find_program_address(&program_seeds, &evm_loader_key);
 
     let operator_key =  Pubkey::new_unique();
-    // let program_indices = [0, 1];
-    // let program_indices = [0];
 
 
     println!("new_acc: {}, {}", ether_address, new_account_key);
@@ -94,7 +92,6 @@ pub fn process(
         &evm_contract,
         &features,
         &accounts,
-        // &program_indices,
         &message,
     )
 }
