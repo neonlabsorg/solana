@@ -35,10 +35,4 @@ fn main(){
         eprintln!("error: {:#}", e);
         exit(1);
     }
-
-    // if let Err(e) = keccak_secp256k1::process(&opt) {
-    //     eprintln!("error: {:#}", e);
-    //     exit(1);
-    // }
-
 }

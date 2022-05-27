@@ -72,6 +72,7 @@ use solana_sdk::{
     feature_set::do_support_realloc,
     transaction::{TransactionError},
     precompiles::verify_if_precompile,
+    sysvar::instructions,
 };
 use std::fs::File;
 use std::io::BufWriter;
@@ -81,6 +82,7 @@ use libsecp256k1::{SecretKey, Signature};
 use libsecp256k1::PublicKey;
 use solana_sdk::account::{WritableAccount, ReadableAccount};
 use std::collections::BTreeMap;
+
 
 fn fill_sysvar_cache() -> SysvarCache {
     let mut sysvar_cache =  SysvarCache::default();
@@ -159,6 +161,18 @@ fn execute(
         5_000,
         0,
     );
+
+    for (pubkey, account) in accounts_ordered.iter().take(message.account_keys_len()) {
+        if instructions::check_id(pubkey) {
+            let mut mut_account_ref = account.borrow_mut();
+            instructions::store_current_index(
+                mut_account_ref.data_as_mut_slice(),
+                instruction_index as u16,
+            );
+            println!("it is the sysvar account! ");
+            break;
+        }
+    }
 
 
     invoke_context
