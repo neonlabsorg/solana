@@ -16,10 +16,10 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/target/release/solana-keygen \
                     /opt/target/release/solana-validator \
                     /opt/target/release/solana-genesis \
+                    /opt/target/release/libsolana_accountsdb_plugin_postgres.so \
                     /opt/solana/bin/
 
 COPY --from=builder /opt/scripts/run.sh /opt/fetch-spl.sh /opt/solana/
-COPY --from=builder /opt/solana-accountsdb-plugin-postgres/target/release/libsolana_accountsdb_plugin_postgres.so /solana/target/release/
 COPY accountsdb-plugin-config.json /opt
 
 ENV PATH /opt/solana/bin/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
