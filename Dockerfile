@@ -8,7 +8,7 @@ RUN cargo build --release \
     --bin solana-faucet \
     --bin solana-genesis \
     --bin solana-keygen \
-    --lib solana-accountsdb-plugin-postgres
+    --bin solana-accountsdb-plugin-postgres
 
 
 FROM ubuntu:20.04
