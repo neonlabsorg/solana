@@ -81,6 +81,7 @@ members = [
     "test-validator",
     "rpc-test",
     "client-test",
+    "solana-accountsdb-plugin-postgres",
 ]
 
 exclude = [
