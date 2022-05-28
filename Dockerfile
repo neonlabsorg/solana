@@ -4,6 +4,8 @@ COPY . /opt
 WORKDIR /opt
 RUN cargo build --release --bin solana --bin solana-validator --bin solana-faucet --bin solana-genesis --bin solana-keygen
 
+WORKDIR /opt/solana-accountsdb-plugin-postgres
+RUN cargo build --release
 
 FROM ubuntu:20.04
 
@@ -19,6 +21,8 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/solana/bin/
 
 COPY --from=builder /opt/scripts/run.sh /opt/fetch-spl.sh /opt/solana/
+COPY --from=builder /opt/solana-accountsdb-plugin-postgres/target/release/libsolana_accountsdb_plugin_postgres.so /solana/target/release/
+COPY accountsdb-plugin-config.json /opt
 
 ENV PATH /opt/solana/bin/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WORKDIR /opt/solana
