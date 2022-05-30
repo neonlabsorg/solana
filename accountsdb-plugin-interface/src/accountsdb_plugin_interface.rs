@@ -40,7 +40,7 @@ pub struct ReplicaAccountInfo<'a> {
     pub write_version: u64,
 
     /// First signature of the transaction caused this account modification
-    pub txn_signature: Option<Signature>,
+    pub txn_signature: &'a [u8],
 }
 
 /// A wrapper to future-proof ReplicaAccountInfo handling.

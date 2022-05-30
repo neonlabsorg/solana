@@ -104,7 +104,7 @@ impl AccountsUpdateNotifierImpl {
         &self,
         meta: &'a StoredMeta,
         account: &'a AccountSharedData,
-        txn_signature: &Signature,
+        txn_signature: &'a Signature,
     ) -> Option<ReplicaAccountInfo<'a>> {
         Some(ReplicaAccountInfo {
             pubkey: meta.pubkey.as_ref(),
@@ -114,7 +114,7 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: account.rent_epoch(),
             data: account.data(),
             write_version: meta.write_version,
-            txn_signature: Some(txn_signature.clone()),
+            txn_signature: txn_signature.as_ref(),
         })
     }
 
@@ -130,7 +130,7 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: stored_account_meta.account_meta.rent_epoch,
             data: stored_account_meta.data,
             write_version: stored_account_meta.meta.write_version,
-            txn_signature: None,
+            txn_signature: &[],
         })
     }
 

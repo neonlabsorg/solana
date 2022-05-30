@@ -13,12 +13,15 @@ CREATE TABLE account (
     rent_epoch BIGINT NOT NULL,
     data BYTEA,
     write_version BIGINT NOT NULL,
-    updated_on TIMESTAMP NOT NULL
+    updated_on TIMESTAMP NOT NULL,
+    txn_signature BYTEA
 );
 
 CREATE INDEX account_owner ON account (owner);
 
 CREATE INDEX account_slot ON account (slot);
+
+CREATE INDEX account_txn_signature ON account (txn_signature);
 
 -- The table storing slot information
 CREATE TABLE slot (
