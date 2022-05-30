@@ -4967,7 +4967,7 @@ impl AccountsDb {
 
         if self.caching_enabled && is_cached_store {
             const DEFAULT_SIG: Signature = Signature::default();
-            let txn_signatures = txn_signatures.unwrap_or(&[DEFAULT_SIG, accounts_and_meta_to_store.len()]);
+            let txn_signatures = txn_signatures.unwrap_or(&[&DEFAULT_SIG, accounts_and_meta_to_store.len()]);
             self.write_accounts_to_cache(
                 slot,
                 hashes,
@@ -6260,12 +6260,7 @@ impl AccountsDb {
 
     /// Store the account update.
     /// only called by tests
-    pub fn store_uncached(
-        &self,
-        slot: Slot,
-        accounts: &[(&Pubkey, &AccountSharedData)],
-    ) {
-        // Non-caching store will not call notifications and txn_signatures will not be used
+    pub fn store_uncached(&self, slot: Slot, accounts: &[(&Pubkey, &AccountSharedData)]) {
         self.store(slot, accounts, false, None);
     }
 
@@ -6467,7 +6462,7 @@ impl AccountsDb {
             write_version_producer,
             is_cached_store,
             reset_accounts,
-            None, // Will not be used because is_cached_store = false
+            None,
         )
     }
 
@@ -9906,7 +9901,7 @@ pub mod tests {
             &[(&key, &account)],
             Some(&[&Hash::default()]),
             false,
-            &[Signature::default()],
+            None,
         );
         db.add_root(some_slot);
         let check_hash = true;
@@ -10014,7 +10009,7 @@ pub mod tests {
             &[(
                 &native_account_pubkey,
                 &solana_sdk::native_loader::create_loadable_account_for_test("foo"),
-            )]
+            )],
         );
         db.update_accounts_hash_test(some_slot, &ancestors);
         assert_matches!(
@@ -10076,7 +10071,7 @@ pub mod tests {
             accounts,
             Some(&[&some_hash]),
             false,
-            txn_signatures,
+            None,
         );
         db.add_root(some_slot);
         assert_matches!(
@@ -10333,7 +10328,7 @@ pub mod tests {
         } else {
             accounts.store_uncached(current_slot, &[(&pubkey2, &account)]);
             accounts.store_uncached(current_slot, &[(&pubkey1, &account)]);
-        }st
+        }
         accounts.get_accounts_delta_hash(current_slot);
         accounts.add_root(current_slot);
 
@@ -10377,9 +10372,9 @@ pub mod tests {
         // D: Make all keys 0-lamport, cleans all keys
         current_slot += 1;
         assert_eq!(3, accounts.ref_count_for_pubkey(&pubkey1));
-        accounts.store_uncached(current_slot, &[(&pubkey1, &zero_lamport_account)], &[Signature::default()]);
-        accounts.store_uncached(current_slot, &[(&pubkey2, &zero_lamport_account)], &[Signature::default()]);
-        accounts.store_uncached(current_slot, &[(&pubkey3, &zero_lamport_account)], &[Signature::default()]);
+        accounts.store_uncached(current_slot, &[(&pubkey1, &zero_lamport_account)]);
+        accounts.store_uncached(current_slot, &[(&pubkey2, &zero_lamport_account)]);
+        accounts.store_uncached(current_slot, &[(&pubkey3, &zero_lamport_account)]);
 
         let snapshot_stores = accounts.get_snapshot_storages(current_slot, None, None).0;
         let total_accounts: usize = snapshot_stores
@@ -10455,8 +10450,8 @@ pub mod tests {
 
         // A: Initialize AccountsDb with pubkey1 and pubkey2
         current_slot += 1;
-        accounts.store_uncached(current_slot, &[(&pubkey1, &account)], &[Signature::default()]);
-        accounts.store_uncached(current_slot, &[(&pubkey2, &account)], &[Signature::default()]);
+        accounts.store_uncached(current_slot, &[(&pubkey1, &account)]);
+        accounts.store_uncached(current_slot, &[(&pubkey2, &account)]);
         accounts.get_accounts_delta_hash(current_slot);
         accounts.add_root(current_slot);
 
@@ -10464,8 +10459,8 @@ pub mod tests {
         current_slot += 1;
         assert_eq!(0, accounts.alive_account_count_in_slot(current_slot));
         assert_eq!(1, accounts.ref_count_for_pubkey(&pubkey1));
-        accounts.store_uncached(current_slot, &[(&pubkey1, &account2)], &[Signature::default()]);
-        accounts.store_uncached(current_slot, &[(&pubkey1, &account2)], &[Signature::default()]);
+        accounts.store_uncached(current_slot, &[(&pubkey1, &account2)]);
+        accounts.store_uncached(current_slot, &[(&pubkey1, &account2)]);
         assert_eq!(1, accounts.alive_account_count_in_slot(current_slot));
         // Stores to same pubkey, same slot only count once towards the
         // ref count
@@ -10476,7 +10471,7 @@ pub mod tests {
         // C: Yet more update to trigger lazy clean of step A
         current_slot += 1;
         assert_eq!(2, accounts.ref_count_for_pubkey(&pubkey1));
-        accounts.store_uncached(current_slot, &[(&pubkey1, &account3)], &[Signature::default()]);
+        accounts.store_uncached(current_slot, &[(&pubkey1, &account3)]);
         assert_eq!(3, accounts.ref_count_for_pubkey(&pubkey1));
         accounts.get_accounts_delta_hash(current_slot);
         accounts.add_root(current_slot);
@@ -10484,7 +10479,7 @@ pub mod tests {
         // D: Make pubkey1 0-lamport; also triggers clean of step B
         current_slot += 1;
         assert_eq!(3, accounts.ref_count_for_pubkey(&pubkey1));
-        accounts.store_uncached(current_slot, &[(&pubkey1, &zero_lamport_account)], &[Signature::default()]);
+        accounts.store_uncached(current_slot, &[(&pubkey1, &zero_lamport_account)]);
         accounts.clean_accounts(None, false, None);
 
         assert_eq!(
@@ -10498,7 +10493,7 @@ pub mod tests {
 
         // E: Avoid missing bank hash error
         current_slot += 1;
-        accounts.store_uncached(current_slot, &[(&dummy_pubkey, &dummy_account)], &[Signature::default()]);
+        accounts.store_uncached(current_slot, &[(&dummy_pubkey, &dummy_account)]);
         accounts.get_accounts_delta_hash(current_slot);
         accounts.add_root(current_slot);
 
@@ -10522,7 +10517,7 @@ pub mod tests {
 
         // F: Finally, make Step A cleanable
         current_slot += 1;
-        accounts.store_uncached(current_slot, &[(&pubkey2, &account)], &[Signature::default()]);
+        accounts.store_uncached(current_slot, &[(&pubkey2, &account)]);
         accounts.get_accounts_delta_hash(current_slot);
         accounts.add_root(current_slot);
 
@@ -10655,7 +10650,7 @@ pub mod tests {
 
             current_slot += 1;
             for pubkey in &pubkeys {
-                accounts.store_uncached(current_slot, &[(pubkey, &account)], &[Signature::default()]);
+                accounts.store_uncached(current_slot, &[(pubkey, &account)]);
             }
             let shrink_slot = current_slot;
             accounts.get_accounts_delta_hash(current_slot);
@@ -10666,7 +10661,7 @@ pub mod tests {
             let updated_pubkeys = &pubkeys[0..pubkey_count - pubkey_count_after_shrink];
 
             for pubkey in updated_pubkeys {
-                accounts.store_uncached(current_slot, &[(pubkey, &account)], &[Signature::default()]);
+                accounts.store_uncached(current_slot, &[(pubkey, &account)]);
             }
             accounts.get_accounts_delta_hash(current_slot);
             accounts.add_root(current_slot);
@@ -10724,7 +10719,7 @@ pub mod tests {
 
         current_slot += 1;
         for pubkey in &pubkeys {
-            accounts.store_uncached(current_slot, &[(pubkey, &account)], &[Signature::default()]);
+            accounts.store_uncached(current_slot, &[(pubkey, &account)]);
         }
         let shrink_slot = current_slot;
         accounts.get_accounts_delta_hash(current_slot);
@@ -10735,7 +10730,7 @@ pub mod tests {
         let updated_pubkeys = &pubkeys[0..pubkey_count - pubkey_count_after_shrink];
 
         for pubkey in updated_pubkeys {
-            accounts.store_uncached(current_slot, &[(pubkey, &account)], &[Signature::default()]);
+            accounts.store_uncached(current_slot, &[(pubkey, &account)]);
         }
         accounts.get_accounts_delta_hash(current_slot);
         accounts.add_root(current_slot);
@@ -11010,7 +11005,7 @@ pub mod tests {
 
         current_slot += 1;
         for pubkey in &pubkeys {
-            accounts.store_uncached(current_slot, &[(pubkey, &account)], &[Signature::default()]);
+            accounts.store_uncached(current_slot, &[(pubkey, &account)]);
         }
         let shrink_slot = current_slot;
         accounts.get_accounts_delta_hash(current_slot);
@@ -11021,7 +11016,7 @@ pub mod tests {
         let updated_pubkeys = &pubkeys[0..pubkey_count - pubkey_count_after_shrink];
 
         for pubkey in updated_pubkeys {
-            accounts.store_uncached(current_slot, &[(pubkey, &account)], &[Signature::default()]);
+            accounts.store_uncached(current_slot, &[(pubkey, &account)]);
         }
         accounts.get_accounts_delta_hash(current_slot);
         accounts.add_root(current_slot);
@@ -11218,7 +11213,7 @@ pub mod tests {
         let accounts = AccountsDb::new_single_for_tests();
         let account = AccountSharedData::default();
         let pubkey = solana_sdk::pubkey::new_rand();
-        accounts.store_uncached(0, &[(&pubkey, &account)], &[Signature::default()]);
+        accounts.store_uncached(0, &[(&pubkey, &account)]);
         let slot_stores = accounts.storage.get_slot_stores(0).unwrap();
         let mut total_len = 0;
         for (_id, store) in slot_stores.read().unwrap().iter() {
@@ -11288,7 +11283,7 @@ pub mod tests {
         for i in 0..num_accounts {
             let account = AccountSharedData::new((i + 1) as u64, size, &Pubkey::default());
             let pubkey = solana_sdk::pubkey::new_rand();
-            accounts.store_uncached(0, &[(&pubkey, &account)], &[Signature::default()]);
+            accounts.store_uncached(0, &[(&pubkey, &account)]);
             keys.push(pubkey);
         }
         accounts.add_root(0);
@@ -11296,7 +11291,7 @@ pub mod tests {
         for (i, key) in keys[1..].iter().enumerate() {
             let account =
                 AccountSharedData::new((1 + i + num_accounts) as u64, size, &Pubkey::default());
-            accounts.store_uncached(1, &[(key, &account)], &[Signature::default()]);
+            accounts.store_uncached(1, &[(key, &account)]);
         }
         accounts.add_root(1);
         accounts.clean_accounts(None, false, None);
@@ -11317,7 +11312,7 @@ pub mod tests {
                 i + 20,
                 &Pubkey::default(),
             );
-            accounts.store_uncached(2, &[(key, &account)], &[Signature::default()]);
+            accounts.store_uncached(2, &[(key, &account)]);
             account_refs.push(account);
         }
         assert!(accounts.recycle_stores.read().unwrap().entry_count() < num_stores);
@@ -11343,8 +11338,8 @@ pub mod tests {
             AccountSharedData::new(0, 0, AccountSharedData::default().owner());
 
         // Store zero lamport account into slots 0 and 1, root both slots
-        db.store_uncached(0, &[(&account_key, &zero_lamport_account)], &[Signature::default()]);
-        db.store_uncached(1, &[(&account_key, &zero_lamport_account)], &[Signature::default()]);
+        db.store_uncached(0, &[(&account_key, &zero_lamport_account)]);
+        db.store_uncached(1, &[(&account_key, &zero_lamport_account)]);
         db.get_accounts_delta_hash(0);
         db.add_root(0);
         db.get_accounts_delta_hash(1);
@@ -12456,9 +12451,9 @@ pub mod tests {
         let account4 = AccountSharedData::new(4, 0, AccountSharedData::default().owner());
 
         // Store accounts into slots 0 and 1
-        db.store_uncached(0, &[(&account_key1, &account1)], &[Signature::default()]);
-        db.store_uncached(0, &[(&account_key2, &account1)], &[Signature::default()]);
-        db.store_uncached(1, &[(&account_key1, &account2)], &[Signature::default()]);
+        db.store_uncached(0, &[(&account_key1, &account1)]);
+        db.store_uncached(0, &[(&account_key2, &account1)]);
+        db.store_uncached(1, &[(&account_key1, &account2)]);
         db.get_accounts_delta_hash(0);
         db.get_accounts_delta_hash(1);
 
@@ -12480,8 +12475,8 @@ pub mod tests {
         db.add_root(0);
 
         // store into slot 2
-        db.store_uncached(2, &[(&account_key2, &account3)], &[Signature::default()]);
-        db.store_uncached(2, &[(&account_key1, &account3)], &[Signature::default()]);
+        db.store_uncached(2, &[(&account_key2, &account3)]);
+        db.store_uncached(2, &[(&account_key1, &account3)]);
         db.get_accounts_delta_hash(2);
 
         db.clean_accounts(None, false, None);
@@ -12493,7 +12488,7 @@ pub mod tests {
 
         db.print_accounts_stats("post-clean3");
 
-        db.store_uncached(3, &[(&account_key2, &account4)], &[Signature::default()]);
+        db.store_uncached(3, &[(&account_key2, &account4)]);
         db.get_accounts_delta_hash(3);
         db.add_root(3);
 
@@ -12716,7 +12711,7 @@ pub mod tests {
         let lamports = 42;
         let mut account = AccountSharedData::new(1, 0, AccountSharedData::default().owner());
         account.set_lamports(lamports);
-        db.store_uncached(slot, &[(&pubkey, &account)], &[Signature::default()]);
+        db.store_uncached(slot, &[(&pubkey, &account)]);
 
         // Set the slot as a root so account loads will see the contents of this slot
         db.add_root(slot);
@@ -13027,9 +13022,9 @@ pub mod tests {
         let account2 = AccountSharedData::new(0, 0, &pubkey2);
         let account3 = AccountSharedData::new(0, 0, &pubkey3);
 
-        db.store_uncached(slot1, &[(&pubkey1, &account1)], &[Signature::default()]);
-        db.store_uncached(slot2, &[(&pubkey2, &account2)], &[Signature::default()]);
-        db.store_uncached(slot3, &[(&pubkey3, &account3)], &[Signature::default()]);
+        db.store_uncached(slot1, &[(&pubkey1, &account1)]);
+        db.store_uncached(slot2, &[(&pubkey2, &account2)]);
+        db.store_uncached(slot3, &[(&pubkey3, &account3)]);
 
         db.add_root(slot1);
         // slot 2 is _not_ a root on purpose
@@ -13085,9 +13080,9 @@ pub mod tests {
         let account2 = AccountSharedData::new(0, 0, &pubkey2);
         let account3 = AccountSharedData::new(0, 0, &pubkey3);
 
-        db.store_uncached(slot1, &[(&pubkey1, &account1)], &[Signature::default()]);
-        db.store_uncached(slot2, &[(&pubkey2, &account2)], &[Signature::default()]);
-        db.store_uncached(slot3, &[(&pubkey3, &account3)], &[Signature::default()]);
+        db.store_uncached(slot1, &[(&pubkey1, &account1)]);
+        db.store_uncached(slot2, &[(&pubkey2, &account2)]);
+        db.store_uncached(slot3, &[(&pubkey3, &account3)]);
 
         // slot 1 is _not_ a root on purpose
         db.add_root(slot2);
@@ -13174,7 +13169,7 @@ pub mod tests {
         let shared_key = solana_sdk::pubkey::new_rand();
         let account = AccountSharedData::new(1, 1, AccountSharedData::default().owner());
         let slot0 = 0;
-        accounts.store_uncached(slot0, &[(&shared_key, &account)], &[Signature::default()]);
+        accounts.store_uncached(slot0, &[(&shared_key, &account)]);
 
         let storage_maps = accounts
             .storage
@@ -13224,8 +13219,8 @@ pub mod tests {
         let account = AccountSharedData::new(1, 1, AccountSharedData::default().owner());
         let account_big = AccountSharedData::new(1, 1000, AccountSharedData::default().owner());
         let slot0 = 0;
-        accounts.store_uncached(slot0, &[(&keys[0], &account)], &[Signature::default()]);
-        accounts.store_uncached(slot0, &[(&keys[1], &account_big)], &[Signature::default()]);
+        accounts.store_uncached(slot0, &[(&keys[0], &account)]);
+        accounts.store_uncached(slot0, &[(&keys[1], &account_big)]);
 
         let storage_maps = accounts
             .storage
@@ -13251,7 +13246,7 @@ pub mod tests {
         let shared_key = solana_sdk::pubkey::new_rand();
         let account = AccountSharedData::new(1, 1, AccountSharedData::default().owner());
         let slot0 = 0;
-        accounts.store_uncached(slot0, &[(&shared_key, &account)], &[Signature::default()]);
+        accounts.store_uncached(slot0, &[(&shared_key, &account)]);
 
         // fake out the store count to avoid the assert
         for slot_stores in accounts.storage.0.iter() {
@@ -13293,8 +13288,8 @@ pub mod tests {
 
         // Store accounts with greater than 0 lamports
         let account = AccountSharedData::new(1, 1, AccountSharedData::default().owner());
-        accounts.store_uncached(slot0, &[(&shared_key, &account)], &[Signature::default()]);
-        accounts.store_uncached(slot0, &[(&unrooted_key, &account)], &[Signature::default()]);
+        accounts.store_uncached(slot0, &[(&shared_key, &account)]);
+        accounts.store_uncached(slot0, &[(&unrooted_key, &account)]);
 
         // Simulate adding dirty pubkeys on bank freeze. Note this is
         // not a rooted slot
@@ -13303,7 +13298,7 @@ pub mod tests {
         // On the next *rooted* slot, update the `shared_key` account to zero lamports
         let zero_lamport_account =
             AccountSharedData::new(0, 0, AccountSharedData::default().owner());
-        accounts.store_uncached(slot1, &[(&shared_key, &zero_lamport_account)], &[Signature::default()]);
+        accounts.store_uncached(slot1, &[(&shared_key, &zero_lamport_account)]);
 
         // Simulate adding dirty pubkeys on bank freeze, set root
         accounts.get_accounts_delta_hash(slot1);
