@@ -109,6 +109,10 @@ pub enum AccountsDbPluginError {
     #[error("Error updating slot status. Error message: ({msg})")]
     SlotStatusUpdateError { msg: String },
 
+    /// Error when updating transaction-account relation
+    #[error("Error updating transaction_account. Error message: ({msg})")]
+    TransactionAccountUpdateError { msg: String },
+
     /// Any custom error defined by the plugin.
     #[error("Plugin-defined custom error. Error message: ({0})")]
     Custom(Box<dyn error::Error + Send + Sync>),

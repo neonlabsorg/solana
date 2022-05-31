@@ -535,6 +535,56 @@ impl SimplePostgresClient {
         }
     }
 
+    pub(crate) fn build_update_transaction_account_statement(
+        client: &mut Client,
+        config: &AccountsDbPluginPostgresConfig,
+    ) -> Result<Statement, AccountsDbPluginError> {
+        const UPDATE_TRANSACTION_ACCOUNT_STATEMENT: &str =
+            "INSERT INTO transaction_account (signature, pubkey) VALUES ($1, $2);";
+
+        Self::prepare_query_statement(client, config, UPDATE_TRANSACTION_ACCOUNT_STATEMENT)
+    }
+
+    pub(crate) fn log_transaction_account(
+        &mut self,
+        transaction_info: DbTransaction,
+    ) -> Result<(), AccountsDbPluginError> {
+        let client = self.client.get_mut().unwrap();
+        let statement = &client.update_transaction_account_stmt;
+        let client = &mut client.client;
+
+        let account_keys = match transaction_info.legacy_message {
+            Some(msg) => msg.account_keys,
+            None => match transaction_info.v0_loaded_message {
+                Some(msg) => msg.message.account_keys,
+                None => return Err(AccountsDbPluginError::TransactionAccountUpdateError{
+                    msg: "Invalid DbTransaction: message is empty".to_string()
+                }),
+            }
+        };
+
+        for key in account_keys {
+            let result = client.query(
+                statement,
+                &[
+                    &transaction_info.signature,
+                    &key,
+                ],
+            );
+
+            if let Err(err) = result {
+                let msg = format!(
+                    "Failed to persist transaction-account relation info to the PostgreSQL database. Error: {:?}",
+                    err
+                );
+                error!("{}", msg);
+                return Err(AccountsDbPluginError::TransactionAccountUpdateError { msg });
+            }
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn log_transaction_impl(
         &mut self,
         transaction_log_info: LogTransactionRequest,
@@ -569,6 +619,8 @@ impl SimplePostgresClient {
             error!("{}", msg);
             return Err(AccountsDbPluginError::AccountsUpdateError { msg });
         }
+
+        self.log_transaction_account(transaction_info)?;
 
         Ok(())
     }
