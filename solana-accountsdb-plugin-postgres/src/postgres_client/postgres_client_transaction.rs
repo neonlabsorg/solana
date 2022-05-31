@@ -540,35 +540,65 @@ impl SimplePostgresClient {
         config: &AccountsDbPluginPostgresConfig,
     ) -> Result<Statement, AccountsDbPluginError> {
         const UPDATE_TRANSACTION_ACCOUNT_STATEMENT: &str =
-            "INSERT INTO transaction_account (signature, pubkey) VALUES ($1, $2);";
+            "INSERT INTO transaction_account (signature, pubkey, is_writable) VALUES ($1, $2, $3);";
 
         Self::prepare_query_statement(client, config, UPDATE_TRANSACTION_ACCOUNT_STATEMENT)
     }
 
-    pub(crate) fn log_transaction_account(
-        &mut self,
-        transaction_info: DbTransaction,
-    ) -> Result<(), AccountsDbPluginError> {
-        let client = self.client.get_mut().unwrap();
-        let statement = &client.update_transaction_account_stmt;
-        let client = &mut client.client;
+    pub(crate) fn get_account_groups<'a>(
+        transaction_info: &'a DbTransaction,
+    ) -> Result<(Vec<&'a Vec<u8>>, Vec<&'a Vec<u8>>), AccountsDbPluginError> {
+        match &transaction_info.legacy_message {
+            Some(msg) => {
+                let rw_signed_max = (msg.header.num_required_signatures - msg.header.num_readonly_signed_accounts)
+                    .try_into()
+                    .map_err(|_| AccountsDbPluginError::AccountKeyParseError)?;
 
-        let account_keys = match transaction_info.legacy_message {
-            Some(msg) => msg.account_keys,
-            None => match transaction_info.v0_loaded_message {
-                Some(msg) => msg.message.account_keys,
-                None => return Err(AccountsDbPluginError::TransactionAccountUpdateError{
+                let ro_signed_max = msg.header.num_required_signatures
+                    .try_into()
+                    .map_err(|_| AccountsDbPluginError::AccountKeyParseError)?;
+
+                let rw_unsigned_max = (msg.account_keys.len() as i16 - msg.header.num_readonly_unsigned_accounts)
+                    .try_into()
+                    .map_err(|_| AccountsDbPluginError::AccountKeyParseError)?;
+
+                let mut rw_accts = Vec::new();
+                let mut ro_accts = Vec::new();
+                msg.account_keys.iter().enumerate().map(|(idx, acct)| {
+                    match idx as i16 {
+                        _ if idx < rw_signed_max => rw_accts.push(acct),
+                        _ if idx >= rw_signed_max && idx < ro_signed_max => ro_accts.push(acct),
+                        _ if idx >= ro_signed_max && idx < rw_unsigned_max => rw_accts.push(acct),
+                        _ => ro_accts.push(acct),
+                    }
+                });
+                Ok((rw_accts, ro_accts))
+            },
+            None => match &transaction_info.v0_loaded_message {
+                Some(msg) =>
+                    Ok((msg.loaded_addresses.writable.iter().collect(),
+                        msg.loaded_addresses.readonly.iter().collect())),
+                None => Err(AccountsDbPluginError::TransactionAccountUpdateError{
                     msg: "Invalid DbTransaction: message is empty".to_string()
                 }),
             }
-        };
+        }
+    }
 
-        for key in account_keys {
+    pub(crate) fn log_accounts(
+        client: &mut Client,
+        statement: &Statement,
+        signature: &Vec<u8>,
+        accounts: Vec<&Vec<u8>>,
+        is_writable: bool,
+    ) -> Result<(), AccountsDbPluginError> {
+        for key in accounts {
             let result = client.query(
                 statement,
                 &[
-                    &transaction_info.signature,
+                    signature,
                     &key,
+                    &is_writable,
                 ],
             );
 
@@ -583,6 +613,19 @@ impl SimplePostgresClient {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn log_transaction_account(
+        &mut self,
+        transaction_info: DbTransaction,
+    ) -> Result<(), AccountsDbPluginError> {
+        let client = self.client.get_mut().unwrap();
+        let statement = &client.update_transaction_account_stmt;
+        let client = &mut client.client;
+
+        let (writable, readonly) = Self::get_account_groups(&transaction_info)?;
+        Self::log_accounts(client, statement, &transaction_info.signature, writable, true)?;
+        Self::log_accounts(client, statement, &transaction_info.signature,readonly, false)
     }
 
     pub(crate) fn log_transaction_impl(

@@ -113,6 +113,10 @@ pub enum AccountsDbPluginError {
     #[error("Error updating transaction_account. Error message: ({msg})")]
     TransactionAccountUpdateError { msg: String },
 
+    /// Error when parsing account keys from message
+    #[error("Error parsing account keys from message.")]
+    AccountKeyParseError,
+
     /// Any custom error defined by the plugin.
     #[error("Plugin-defined custom error. Error message: ({0})")]
     Custom(Box<dyn error::Error + Send + Sync>),

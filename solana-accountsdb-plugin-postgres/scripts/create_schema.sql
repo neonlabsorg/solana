@@ -235,6 +235,7 @@ CREATE TRIGGER account_update_trigger AFTER UPDATE OR DELETE ON account
 CREATE TABLE transaction_account (
     signature BYTEA,
     pubkey BYTEA,
+    is_writable BOOL,
 
     CONSTRAINT txn_acc_pk PRIMARY KEY (signature, pubkey)
 )
