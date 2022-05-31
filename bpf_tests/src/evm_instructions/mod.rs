@@ -62,6 +62,7 @@ struct UnsignedTransaction {
 
 
 pub const evm_loader_str :&str = "eeLSJgWzzxrqKv1UxtRVVH8FX3qCQWUs9QuAjJpETGU";
+pub const evm_loader_orig_str :&str = "31QHZZ2azAyK7NsGUdw3kxhG9AJaiQ1ExUvcJiMEQ8k9";
 
 pub fn feature_set() -> Arc<FeatureSet> {
     let mut features = FeatureSet::all_enabled();

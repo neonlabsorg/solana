@@ -722,6 +722,7 @@ impl<'a> InvokeContext<'a> {
                 return Err(InstructionError::MissingAccount);
             }
         }
+        println!( "OKKKKKKKKK");
         program_indices.push(program_account_index);
 
         Ok((message, caller_write_privileges, program_indices))
@@ -850,6 +851,7 @@ impl<'a> InvokeContext<'a> {
             for entry in self.builtin_programs {
                 if entry.program_id == *owner_id {
                     // Call the program via a builtin loader
+                    println!("process_instruction #");
                     return (entry.process_instruction)(
                         0, // no root_id was provided
                         instruction_data,

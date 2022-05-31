@@ -17,6 +17,7 @@ use solana_sdk::{
     native_loader,
     system_program,
     sysvar::instructions,
+    bpf_loader_upgradeable,
     instruction::{Instruction, AccountMeta},
     message::{
         SanitizedMessage,
@@ -41,15 +42,7 @@ use std::{
 use solana_sdk::account::{WritableAccount, ReadableAccount};
 use hex;
 
-use crate::evm_instructions::{
-    feature_set,
-    bpf_loader_shared,
-    evm_loader_shared,
-    system_shared,
-    evm_loader_str,
-    sysvar_shared,
-    make_ethereum_transaction,
-};
+use crate::evm_instructions::{feature_set, bpf_loader_shared, evm_loader_shared, system_shared, evm_loader_str, sysvar_shared, make_ethereum_transaction, evm_loader_orig_str};
 
 use evm_loader::{
     account::{
@@ -74,7 +67,7 @@ use std::borrow::Borrow;
 use std::ops::{Deref, DerefMut};
 use std::cell::RefMut;
 use evm::Valids;
-
+use std::path::PathBuf;
 
 
 
@@ -106,6 +99,10 @@ pub fn process(
 ) -> Result<(), anyhow::Error> {
 
     let evm_contract = read_elf::read_so(opt)?;
+
+    let mut path_bin =  PathBuf::new();
+    path_bin.push("/home/user/CLionProjects/neonlabs/solana/bpf_tests/evm_loader_orig.bin");
+    let evm_loader_bin = read_elf::read_bin(path_bin)?;
 
     let evm_loader_key = Pubkey::from_str(&evm_loader_str).unwrap();
     let operator_key= solana_sdk::pubkey::Pubkey::new_from_array(AUTHORIZED_OPERATOR_LIST[0].to_bytes());
@@ -194,8 +191,23 @@ pub fn process(
     let mut data= keccak_shared.data_mut().as_mut_slice();
     data.copy_from_slice(String::from("secp256k1_program").as_bytes());
 
+    let evm_loader_orig_key = solana_sdk::pubkey::Pubkey::from_str(evm_loader_orig_str).unwrap();
+    let mut evm_loader_orig_shared = AccountSharedData::new(25_000_000_000, evm_loader_bin.len(), &bpf_loader_upgradeable::id());
+    let mut data= evm_loader_orig_shared.data_mut().as_mut_slice();
+    data.copy_from_slice(evm_loader_bin.as_slice());
+
+
+    let mut evm_loader_shared = AccountSharedData::new(1_000_000_000_000_000_000, 36, &bpf_loader_upgradeable::id());
+    evm_loader_shared.set_executable(true);
+    let mut data= evm_loader_shared.data_mut().as_mut_slice();
+
+    data[..4].copy_from_slice(vec![2, 0, 0, 0].as_slice());
+    data[4..].copy_from_slice(evm_loader_orig_key.to_bytes().as_slice());
+
+
     let mut accounts = BTreeMap::from([
-        ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared())) ),
+        // ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared())) ),
+        ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared.clone())) ),
         // (instructions::id(), Rc::new(RefCell::new(sysvar_shared()))),
 
         (operator_key, AccountSharedData::new_ref(1_000_000_000_000_000_000, 0, &system_program::id())),
@@ -206,13 +218,17 @@ pub fn process(
 
         (system_program::id(), Rc::new(RefCell::new(system_shared()))),
 
-        (evm_loader_key, Rc::new(RefCell::new(evm_loader_shared()))),
+        // (evm_loader_key, Rc::new(RefCell::new(evm_loader_shared()))),
+        (evm_loader_key, Rc::new(RefCell::new(evm_loader_shared))),
 
         (contract_key, Rc::new(RefCell::new(contract_shared))),
         (code_key, Rc::new(RefCell::new(code_shared))),
 
         (token_key, AccountSharedData::new_ref(0, 0, &bpf_loader::id())),
         (keccak_key, Rc::new(RefCell::new(keccak_shared) )),
+
+        (evm_loader_orig_key, Rc::new(RefCell::new(evm_loader_orig_shared))),
+
     ]);
 
     let meta = vec![

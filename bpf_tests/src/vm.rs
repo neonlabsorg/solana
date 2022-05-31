@@ -1,7 +1,4 @@
-use crate::evm_instructions::{
-    evm_loader_str,
-    evm_loader_shared,
-};
+use crate::evm_instructions::{evm_loader_str, evm_loader_shared, evm_loader_orig_str};
 
 use anyhow::{anyhow};
 use std::{
@@ -152,6 +149,18 @@ fn execute(
             process_instruction: builtin.process_instruction_with_context,
         });
     };
+    let bpf_loader = solana_bpf_loader_program::solana_bpf_loader_program!();
+    let upgradable_loader = solana_bpf_loader_program::solana_bpf_loader_upgradeable_program!();
+
+    builtin_programs.vec.push(BuiltinProgram {
+        program_id: solana_sdk::bpf_loader::id(),
+        process_instruction: bpf_loader.2,
+    });
+
+    builtin_programs.vec.push(BuiltinProgram {
+        program_id: solana_sdk::bpf_loader_upgradeable::id(),
+        process_instruction: upgradable_loader.2,
+    });
 
 
     let mut invoke_context = InvokeContext::new(
@@ -348,6 +357,9 @@ pub fn run(
         accounts_ordered.push(value );
     }
 
+    let evm_loader_orig_key = solana_sdk::pubkey::Pubkey::from_str(evm_loader_orig_str).unwrap();
+    let value : TransactionAccountRefCell = (evm_loader_orig_key, accounts.get(&evm_loader_orig_key).unwrap().clone() );
+    accounts_ordered.push(value );
 
 
     let evm_loader_key = Pubkey::from_str(&evm_loader_str)?;

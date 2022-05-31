@@ -142,6 +142,7 @@ pub fn create_executor(
         let programdata = keyed_account_at_index(keyed_accounts, programdata_account_index)?;
         create_executor_metrics.program_id = programdata.unsigned_key().to_string();
         let mut load_elf_time = Measure::start("load_elf_time");
+        println!("PARSE");
         let executable = Executable::<BpfError, ThisInstructionMeter>::from_elf(
             &programdata.try_account_ref()?.data()[programdata_offset..],
             None,
@@ -274,11 +275,14 @@ fn process_instruction_common(
     invoke_context: &mut InvokeContext,
     use_jit: bool,
 ) -> Result<(), InstructionError> {
+    println!("process_instruction_common");
     let log_collector = invoke_context.get_log_collector();
     let program_id = invoke_context.get_caller()?;
 
     let keyed_accounts = invoke_context.get_keyed_accounts()?;
     let first_account = keyed_account_at_index(keyed_accounts, first_instruction_account)?;
+    println!("first_account {:?}", &first_account);
+    println!("program_id {:?}", &program_id);
     let second_account = keyed_account_at_index(keyed_accounts, first_instruction_account + 1);
     let (program, next_first_instruction_account) = if first_account.unsigned_key() == program_id {
         (first_account, first_instruction_account)
@@ -295,6 +299,8 @@ fn process_instruction_common(
         }
         (first_account, first_instruction_account)
     };
+
+    println!("program {:?}", &program);
 
     if program.executable()? {
         debug_assert_eq!(

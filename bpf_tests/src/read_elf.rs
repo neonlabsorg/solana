@@ -97,3 +97,13 @@ pub fn read_so(opt: &program_options::Opt) -> Result<Vec<u8>, anyhow::Error>{
     Ok(fs::read(&path)?)
 }
 
+pub fn read_bin(path :PathBuf ) -> Result<Vec<u8>, anyhow::Error>{
+
+    if !path.exists() {
+        return Err(anyhow!(
+            "No such file or directory: {}",
+            path.to_string_lossy()
+        ).into());
+    }
+    Ok(fs::read(&path)?)
+}
