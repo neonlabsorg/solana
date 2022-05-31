@@ -5,7 +5,7 @@
 
 
 CREATE TABLE account (
-    pubkey BYTEA PRIMARY KEY,
+    pubkey BYTEA,
     owner BYTEA,
     lamports BIGINT NOT NULL,
     slot BIGINT NOT NULL,
@@ -14,7 +14,9 @@ CREATE TABLE account (
     data BYTEA,
     write_version BIGINT NOT NULL,
     updated_on TIMESTAMP NOT NULL,
-    txn_signature BYTEA
+    txn_signature BYTEA,
+
+    CONSTRAINT account_pk PRIMARY KEY (pubkey, slot, write_version)
 );
 
 CREATE INDEX account_owner ON account (owner);
