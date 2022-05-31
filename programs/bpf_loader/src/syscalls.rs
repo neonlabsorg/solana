@@ -2529,6 +2529,7 @@ fn call<'a, 'b: 'a>(
         memory_mapping,
     )?;
     let stack_height = invoke_context.get_stack_height();
+    println!("syscalls::call() process_instruction ???????????? ");
     let (message, caller_write_privileges, program_indices) = invoke_context
         .create_message(&instruction, &signers)
         .map_err(SyscallError::InstructionError)?;
@@ -2547,7 +2548,10 @@ fn call<'a, 'b: 'a>(
 
     // Process instruction
     let message = SanitizedMessage::Legacy(message);
-    // println!("syscalls::call() process_instruction !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ");
+
+    // let pr = program_indices.last().unwrap();
+    // println!("program id: {}", message.get_account_key(*pr).unwrap());
+    println!("{:?}", message);
 
     invoke_context
         .process_instruction(
@@ -2630,6 +2634,8 @@ fn call<'a, 'b: 'a>(
         }
         // println!("");
     }
+
+    println!("SUCCESS");
 
     Ok(SUCCESS)
 }

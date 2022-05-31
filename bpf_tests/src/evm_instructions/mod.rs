@@ -18,6 +18,7 @@ use solana_sdk::{
     native_loader,
     system_program,
     sysvar::instructions,
+    bpf_loader_upgradeable,
 };
 use solana_program:: {
     pubkey::Pubkey,
@@ -77,7 +78,8 @@ pub fn bpf_loader_shared() -> AccountSharedData {
 }
 
 pub fn evm_loader_shared() -> AccountSharedData {
-    let mut shared = AccountSharedData::new(1_000_000_000_000_000_000, 36, &bpf_loader::id());
+    // let mut shared = AccountSharedData::new(1_000_000_000_000_000_000, 36, &bpf_loader::id());
+    let mut shared = AccountSharedData::new(1_000_000_000_000_000_000, 36, &bpf_loader_upgradeable::id());
     shared.set_executable(true);
     shared
 }
@@ -128,13 +130,19 @@ pub fn make_ethereum_transaction(
 
     let pk = SecretKey::parse(&bin).unwrap();
 
+    // let call = "8d0357794e";  // callHelloWorld()
+    let call = "3917b3df";  // callHelloWorld()
+    let data = hex::decode(call).unwrap().as_slice().to_vec();
+
     let rlp_data = {
         let tx = UnsignedTransaction {
             to: Some(*to),
             nonce: trx_count,
             gas_limit: 9_999_999_999_u64.into(),
             gas_price: 10_u64.pow(9).into(),
-            value: U256::zero(),
+            // value: U256::zero(),
+            value: U256::from(10_u64),
+            // data: data.to_vec(),
             data: vec![],
             chain_id: CHAIN_ID.into(),
         };

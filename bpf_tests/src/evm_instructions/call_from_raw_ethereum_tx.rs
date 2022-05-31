@@ -6,6 +6,7 @@ use bincode::serialize;
 
 use evm::{H160, U256};
 use evm_loader::account::ACCOUNT_SEED_VERSION;
+use evm_loader::hamt;
 
 use solana_program::account_info::AccountInfo;
 
@@ -72,6 +73,7 @@ use rlp::RlpStream;
 use std::borrow::Borrow;
 use std::ops::{Deref, DerefMut};
 use std::cell::RefMut;
+use evm::Valids;
 
 
 
@@ -123,7 +125,7 @@ pub fn process(
         address : caller_address,
         bump_seed: caller_key_nonce,
         trx_count: 0,
-        balance: U256::from(1_000_000_000_u32),
+        balance: U256::from(1_000_000_000_000_000_000_u64),
         code_account: None,
         rw_blocked:  false,
         ro_blocked_count: 0,
@@ -160,15 +162,26 @@ pub fn process(
         owner: evm_loader::solana_program::pubkey::Pubkey::new_from_array(contract_key.to_bytes()),
         code_size: hello_world.len() as u32
     };
+
+    let code_size = code.code_size as usize;
+    let valids_size = (code_size / 8) + 1;
+
+
     let mut code_shared = AccountSharedData::new(1_000_000_000_000_000_000, ether_contract::Data::SIZE+1+2048, &evm_loader_key);
-    let (mut tag, mut bytes) = code_shared.data_mut().split_first_mut().expect("error");
-    let (data, remainig) = bytes.split_at_mut(ether_contract::Data::SIZE);
-    code.pack(data);
-    remainig[..hello_world.len()].copy_from_slice(hello_world.as_slice());
+
+    let (tag, rest) = code_shared.data_mut().split_first_mut().expect("error");
+    let (data,  rest) = rest.split_at_mut(ether_contract::Data::SIZE);
+    let (contract_code,  rest) = rest.split_at_mut(code_size);
+    let (mut valids,  storage) = rest.split_at_mut(valids_size);
+
     *tag = 2;   // TAG_CONTRACT
 
-    // let code_size = code.code_size as usize;
-    // let valids_size = (code_size / 8) + 1;
+    code.pack(data);
+
+    contract_code[..hello_world.len()].copy_from_slice(hello_world.as_slice());
+
+    let values = Valids::compute(hello_world.as_slice());
+    valids[..values.len()].copy_from_slice(values.as_slice());
 
 
     let token_key = Pubkey::new_from_array(spl_token::id().to_bytes());
@@ -181,11 +194,11 @@ pub fn process(
     let mut data= keccak_shared.data_mut().as_mut_slice();
     data.copy_from_slice(String::from("secp256k1_program").as_bytes());
 
-    let  accounts = BTreeMap::from([
+    let mut accounts = BTreeMap::from([
         ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared())) ),
-        (instructions::id(), Rc::new(RefCell::new(sysvar_shared()))),
+        // (instructions::id(), Rc::new(RefCell::new(sysvar_shared()))),
 
-        (operator_key, AccountSharedData::new_ref(1_000_000_000, 0, &system_program::id())),
+        (operator_key, AccountSharedData::new_ref(1_000_000_000_000_000_000, 0, &system_program::id())),
 
         (treasury_key, AccountSharedData::new_ref(0, 0, &evm_loader_key)),
 
@@ -211,6 +224,7 @@ pub fn process(
         AccountMeta::new_readonly(evm_loader_key, false),
         AccountMeta::new(contract_key, false),
         AccountMeta::new(code_key, false),
+        AccountMeta::new(caller_key, false),
         AccountMeta::new_readonly(token_key, false),
     ];
 
@@ -218,10 +232,11 @@ pub fn process(
     println!("treasure_key {}", treasury_key);
     println!("caller_key {}", caller_key);
     println!("contract_key {}", contract_key);
-    println!("code_key {}", code_key);
+    println!("code_key {}\n\r", code_key);
 
 
-    let (sig, msg) = make_ethereum_transaction(caller.trx_count, &contract.address);
+    // let (sig, msg) = make_ethereum_transaction(caller.trx_count, &contract.address);
+    let (sig, msg) = make_ethereum_transaction(caller.trx_count, &caller.address);
     let mut ix_data:Vec<u8> = Vec::new();
     ix_data.push(5_u8);
     ix_data.extend_from_slice(&treasury_index.to_le_bytes());
@@ -236,7 +251,8 @@ pub fn process(
         meta
     );
 
-    let instruction_keccak = make_keccak_instruction(&contract.address).unwrap();
+    // let instruction_keccak = make_keccak_instruction(&contract.address).unwrap();
+    let instruction_keccak = make_keccak_instruction(&caller.address).unwrap();
 
     let message = SanitizedMessage::Legacy(Message::new(
         &[instruction_keccak, instruction_05 ],
@@ -248,7 +264,7 @@ pub fn process(
     vm::run(
         &evm_contract,
         &features,
-        &accounts,
+        &mut accounts,
         &message,
     )
 

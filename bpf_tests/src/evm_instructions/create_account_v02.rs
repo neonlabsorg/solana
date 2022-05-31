@@ -59,7 +59,7 @@ pub fn process(
     println!("new_acc: {}, {}", ether_address, new_account_key);
     println!("operator: {}", operator_key);
 
-    let  accounts = BTreeMap::from([
+    let mut accounts = BTreeMap::from([
         ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared())) ),
         ( operator_key, AccountSharedData::new_ref(1_000_000_000, 0, &system_program::id()) ),
         ( system_program::id(), Rc::new(RefCell::new(system_shared())) ),
@@ -91,7 +91,7 @@ pub fn process(
     vm::run(
         &evm_contract,
         &features,
-        &accounts,
+        &mut accounts,
         &message,
     )
 }

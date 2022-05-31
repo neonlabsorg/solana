@@ -36,8 +36,8 @@ use solana_program_runtime::{
 };
 use solana_rbpf::{elf::Executable, vm::Config};
 use solana_sdk::{
-    account::AccountSharedData, bpf_loader, entrypoint::SUCCESS,
-    feature_set::FeatureSet,
+    account::{AccountSharedData, Account}, bpf_loader, entrypoint::SUCCESS,
+    feature_set::{FeatureSet, instructions_sysvar_owned_by_sysvar},
     hash::Hash,
     pubkey::Pubkey,
     rent::Rent,
@@ -55,7 +55,13 @@ use solana_sdk::{
     secp256k1_program,
     secp256k1_instruction::new_secp256k1_instruction,
     instruction::InstructionError,
-    instruction::Instruction
+    instruction::Instruction,
+    sysvar::{
+        instructions::{
+            construct_instructions_data},
+    },
+    system_program,
+
 };
 
 use solana_runtime::{
@@ -169,7 +175,7 @@ fn execute(
                 mut_account_ref.data_as_mut_slice(),
                 instruction_index as u16,
             );
-            println!("it is the sysvar account! ");
+            // println!("it is the sysvar account! ");
             break;
         }
     }
@@ -192,6 +198,7 @@ fn execute(
     let invoke_context_mut = &mut invoke_context;
 
     let  keyed_accounts = invoke_context_mut.get_keyed_accounts().unwrap();
+
     let (mut parameter_bytes, account_lengths) = serialize_parameters(
         &keyed_accounts[0].owner().unwrap(),
         keyed_accounts[0].unsigned_key(),
@@ -201,6 +208,7 @@ fn execute(
         .unwrap();
 
     let syscall_registry = register_syscalls(invoke_context_mut).unwrap();
+
     let mut executable =
         match Executable::<BpfError, ThisInstructionMeter>::from_elf(
             contract,
@@ -210,10 +218,11 @@ fn execute(
         ){
             Ok(a) => a,
             Err(e) => {
-                println! ("error {}", e);
-                return Err(anyhow!(""));
+                println! ("error {:?}", e);
+                return Err(anyhow!("error {:?}", e));
             }
         };
+
     Executable::<BpfError, ThisInstructionMeter>::jit_compile(&mut executable).unwrap();
 
     let mut vm = create_vm(
@@ -226,11 +235,11 @@ fn execute(
     stable_log::program_invoke(&log_collector, &program_id, stack_height);
 
     let start_time = Instant::now();
-    let before: u64 = compute_meter.try_borrow().unwrap().get_remaining();
+    let units_before = compute_meter.try_borrow().unwrap().get_remaining();
 
     let result = vm.execute_program_jit(&mut instruction_meter);
 
-    let after:u64 = compute_meter.try_borrow().unwrap().get_remaining();
+    let units_after = compute_meter.try_borrow().unwrap().get_remaining();
     let instruction_count = vm.get_total_instruction_count();
 
     drop(vm);
@@ -246,8 +255,6 @@ fn execute(
             .is_active(&do_support_realloc::id()),
     );
 
-    println!("Executed {}  instructions in {:.2}s.", instruction_count, start_time.elapsed().as_secs_f64());
-    println!("Program  {} consumed {} of {} compute units", program_id, before - after, before);
 
     let  return_data = &invoke_context.return_data.1;
 
@@ -258,6 +265,9 @@ fn execute(
         stable_log::program_return(&log_collector, &program_id, &vec![]);
     }
 
+
+    println!("Executed {}  instructions in {:.2}s.", instruction_count, start_time.elapsed().as_secs_f64());
+    println!("Program  {} consumed {} of {} compute units", program_id, units_before - units_after, units_before);
 
     result.map_err(|e| {anyhow!("exit code: {}", e)})
 }
@@ -283,28 +293,63 @@ pub fn verify_precompiles(message: &SanitizedMessage, feature_set: &Arc<FeatureS
     Ok(())
 }
 
+fn construct_instructions_account(
+    message: &SanitizedMessage,
+    is_owned_by_sysvar: bool,
+) -> AccountSharedData {
+    let data = construct_instructions_data(&message.decompile_instructions());
+    let owner = if is_owned_by_sysvar {
+        sysvar::id()
+    } else {
+        system_program::id()
+    };
+    AccountSharedData::from(Account {
+        data,
+        owner,
+        ..Account::default()
+    })
+}
+
 
 pub fn run(
     contract: &Vec<u8>,
     features: &Arc<FeatureSet>,
-    accounts: &BTreeMap<Pubkey, Rc<RefCell<AccountSharedData>>>,
+    accounts: &mut BTreeMap<Pubkey, Rc<RefCell<AccountSharedData>>>,
     message: &SanitizedMessage,
 ) -> Result<(), anyhow::Error> {
+
+    let logs = Rc::new(RefCell::new(LogCollector::default()));
 
     // secp256k1_program
     verify_precompiles(message, features).map_err(|e| anyhow!("precompile instruction error: {:?}", e )).unwrap();
 
-    println!("verify_precompiles is completed");
+    // println!("verify_precompiles is completed");
 
-    let logs = Rc::new(RefCell::new(LogCollector::default()));
+    let is_active = features.is_active(&instructions_sysvar_owned_by_sysvar::id());
+
+    for (i, key) in message.account_keys_iter().enumerate() {
+        if solana_sdk::sysvar::instructions::check_id(key) {
+            let sysvar_shared = construct_instructions_account(
+                message,
+                is_active
+            );
+
+            accounts.insert(
+                sysvar::instructions::id(), Rc::new(RefCell::new(sysvar_shared))
+            );
+        }
+    }
+
 
     let mut accounts_ordered :Vec<TransactionAccountRefCell> = Vec::new();
 
     for key in message.account_keys_iter() {
-        // println!("key {}", key);
         let value : TransactionAccountRefCell = (*key, accounts.get(key).unwrap().clone() );
         accounts_ordered.push(value );
     }
+
+
+
     let evm_loader_key = Pubkey::from_str(&evm_loader_str)?;
 
     let program_index = accounts_ordered.iter().position(|item|item.0 == evm_loader_key ).unwrap();
@@ -338,7 +383,7 @@ pub fn run(
          }
     }
 
-    println!("logs:");
+    println!("");
     if let Ok(logs) = Rc::try_unwrap(logs) {
         for message in Vec::from(logs.into_inner()) {
             // println!("{}", message);
@@ -347,8 +392,9 @@ pub fn run(
         }
     }
 
+    println!("");
     for i in accounts_ordered{
-        println!("{:?}", i);
+        println!("{:?}", i.0);
     }
 
     Ok(())

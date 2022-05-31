@@ -769,6 +769,7 @@ impl<'a> InvokeContext<'a> {
                 let program_id = message
                     .get_account_key(instruction.program_id_index as usize)
                     .expect("invalid program id index");
+                println!("invoke_context::process_instruction() program_id : {}" , program_id);
                 self.return_data = (*program_id, Vec::new());
                 let pre_remaining_units = self.compute_meter.borrow().get_remaining();
                 let execution_result = self.process_executable_chain(&instruction.data);
@@ -843,6 +844,9 @@ impl<'a> InvokeContext<'a> {
                 return native_loader.process_instruction(0, instruction_data, self);
             }
         } else {
+            for i in self.builtin_programs{
+                println!("builtins: {:?}", i.program_id);
+            }
             for entry in self.builtin_programs {
                 if entry.program_id == *owner_id {
                     // Call the program via a builtin loader
@@ -854,6 +858,7 @@ impl<'a> InvokeContext<'a> {
                 }
             }
         }
+        println!("UnsupportedProgramId");
         Err(InstructionError::UnsupportedProgramId)
     }
 
