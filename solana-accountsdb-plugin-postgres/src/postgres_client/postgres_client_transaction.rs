@@ -545,9 +545,9 @@ impl SimplePostgresClient {
         Self::prepare_query_statement(client, config, UPDATE_TRANSACTION_ACCOUNT_STATEMENT)
     }
 
-    pub(crate) fn get_account_groups<'a>(
-        transaction_info: &'a DbTransaction,
-    ) -> Result<(Vec<&'a Vec<u8>>, Vec<&'a Vec<u8>>), AccountsDbPluginError> {
+    pub(crate) fn get_account_groups(
+        transaction_info: &DbTransaction,
+    ) -> Result<(Vec<&Vec<u8>>, Vec<&Vec<u8>>), AccountsDbPluginError> {
         match &transaction_info.legacy_message {
             Some(msg) => {
                 let rw_signed_max = (msg.header.num_required_signatures - msg.header.num_readonly_signed_accounts)
