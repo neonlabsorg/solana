@@ -120,7 +120,7 @@ impl DbAccountInfo {
             data,
             slot: slot as i64,
             write_version: account.write_version(),
-            txn_signature: account.txn_signature().to_vec(),
+            txn_signature: account.txn_signature().map_or(Vec::new(),|v| v.to_vec()),
         }
     }
 }
@@ -133,7 +133,7 @@ pub trait ReadableAccountInfo: Sized {
     fn rent_epoch(&self) -> i64;
     fn data(&self) -> &[u8];
     fn write_version(&self) -> i64;
-    fn txn_signature(&self) -> &[u8];
+    fn txn_signature(&self) -> Option<&[u8]>;
 }
 
 impl ReadableAccountInfo for DbAccountInfo {
@@ -165,7 +165,13 @@ impl ReadableAccountInfo for DbAccountInfo {
         self.write_version
     }
 
-    fn txn_signature(&self) -> &[u8] { &self.txn_signature }
+    fn txn_signature(&self) -> Option<&[u8]> {
+        if self.txn_signature.is_empty() {
+            None
+        } else {
+            Some(&self.txn_signature)
+        }
+    }
 }
 
 impl<'a> ReadableAccountInfo for ReplicaAccountInfo<'a> {
@@ -197,7 +203,13 @@ impl<'a> ReadableAccountInfo for ReplicaAccountInfo<'a> {
         self.write_version as i64
     }
 
-    fn txn_signature(&self) -> &[u8] { self.txn_signature }
+    fn txn_signature(&self) -> Option<&[u8]> {
+        if self.txn_signature.is_empty() {
+            None
+        } else {
+            Some(self.txn_signature)
+        }
+    }
 }
 
 pub trait PostgresClient {
