@@ -550,28 +550,31 @@ impl SimplePostgresClient {
     ) -> Result<(Vec<&Vec<u8>>, Vec<&Vec<u8>>), AccountsDbPluginError> {
         match &transaction_info.legacy_message {
             Some(msg) => {
-                let rw_signed_max = (msg.header.num_required_signatures - msg.header.num_readonly_signed_accounts)
+                let rw_signed_max: usize = (msg.header.num_required_signatures - msg.header.num_readonly_signed_accounts)
                     .try_into()
                     .map_err(|_| AccountsDbPluginError::AccountKeyParseError)?;
 
-                let ro_signed_max = msg.header.num_required_signatures
+                let ro_signed_max: usize = msg.header.num_required_signatures
                     .try_into()
                     .map_err(|_| AccountsDbPluginError::AccountKeyParseError)?;
 
-                let rw_unsigned_max = (msg.account_keys.len() as i16 - msg.header.num_readonly_unsigned_accounts)
+                let rw_unsigned_max: usize = (msg.account_keys.len() as i16 - msg.header.num_readonly_unsigned_accounts)
                     .try_into()
                     .map_err(|_| AccountsDbPluginError::AccountKeyParseError)?;
 
                 let mut rw_accts = Vec::new();
                 let mut ro_accts = Vec::new();
-                msg.account_keys.iter().enumerate().map(|(idx, acct)| {
-                    match idx as i16 {
-                        _ if idx < rw_signed_max => rw_accts.push(acct),
-                        _ if idx >= rw_signed_max && idx < ro_signed_max => ro_accts.push(acct),
-                        _ if idx >= ro_signed_max && idx < rw_unsigned_max => rw_accts.push(acct),
-                        _ => ro_accts.push(acct),
+                for (idx, acct) in msg.account_keys.iter().enumerate() {
+                    if idx < rw_signed_max {
+                        rw_accts.push(acct);
+                    } else if idx >= rw_signed_max && idx < ro_signed_max {
+                        ro_accts.push(acct);
+                    } else if idx >= ro_signed_max && idx < rw_unsigned_max {
+                        rw_accts.push(acct);
+                    } else {
+                        ro_accts.push(acct);
                     }
-                });
+                };
                 Ok((rw_accts, ro_accts))
             },
             None => match &transaction_info.v0_loaded_message {
@@ -589,7 +592,7 @@ impl SimplePostgresClient {
         client: &mut Client,
         statement: &Statement,
         signature: &Vec<u8>,
-        accounts: Vec<&Vec<u8>>,
+        accounts: &Vec<&Vec<u8>>,
         is_writable: bool,
     ) -> Result<(), AccountsDbPluginError> {
         for key in accounts {
@@ -624,8 +627,8 @@ impl SimplePostgresClient {
         let client = &mut client.client;
 
         let (writable, readonly) = Self::get_account_groups(&transaction_info)?;
-        Self::log_accounts(client, statement, &transaction_info.signature, writable, true)?;
-        Self::log_accounts(client, statement, &transaction_info.signature,readonly, false)
+        Self::log_accounts(client, statement, &transaction_info.signature, &writable, true)?;
+        Self::log_accounts(client, statement, &transaction_info.signature,&readonly, false)
     }
 
     pub(crate) fn log_transaction_impl(
