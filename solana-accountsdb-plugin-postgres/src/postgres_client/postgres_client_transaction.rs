@@ -555,6 +555,128 @@ impl SimplePostgresClient {
         }
     }
 
+    pub(crate) fn build_update_transaction_account_statement(
+        client: &mut Client,
+        config: &GeyserPluginPostgresConfig,
+    ) -> Result<Statement, GeyserPluginError> {
+        const UPDATE_TRANSACTION_ACCOUNT_STATEMENT: &str =
+            "INSERT INTO transaction_account (signature, pubkey, is_writable) VALUES ($1, $2, $3);";
+
+        Self::prepare_query_statement(client, config, UPDATE_TRANSACTION_ACCOUNT_STATEMENT)
+    }
+
+    pub(crate) fn get_account_groups(
+        transaction_info: &DbTransaction,
+    ) -> Result<(Vec<&Vec<u8>>, Vec<&Vec<u8>>), GeyserPluginError> {
+        match &transaction_info.legacy_message {
+            Some(msg) => {
+                let rw_signed_max: usize = (msg.header.num_required_signatures - msg.header.num_readonly_signed_accounts)
+                    .try_into()
+                    .map_err(|_| GeyserPluginError::Custom(
+                        Box::new(
+                            GeyserPluginPostgresError::AccountKeyParseError
+                        )
+                    ))?;
+
+                let ro_signed_max: usize = msg.header.num_required_signatures
+                    .try_into()
+                    .map_err(|_| GeyserPluginError::Custom(
+                        Box::new(
+                            GeyserPluginPostgresError::AccountKeyParseError
+                        )
+                    ))?;
+
+                let rw_unsigned_max: usize = (msg.account_keys.len() as i16 - msg.header.num_readonly_unsigned_accounts)
+                    .try_into()
+                    .map_err(|_| GeyserPluginError::Custom(
+                        Box::new(
+                            GeyserPluginPostgresError::AccountKeyParseError
+                        )
+                    ))?;
+
+                let mut rw_accts = Vec::new();
+                let mut ro_accts = Vec::new();
+                for (idx, acct) in msg.account_keys.iter().enumerate() {
+                    if idx < rw_signed_max {
+                        rw_accts.push(acct);
+                    } else if idx >= rw_signed_max && idx < ro_signed_max {
+                        ro_accts.push(acct);
+                    } else if idx >= ro_signed_max && idx < rw_unsigned_max {
+                        rw_accts.push(acct);
+                    } else {
+                        ro_accts.push(acct);
+                    }
+                };
+                Ok((rw_accts, ro_accts))
+            },
+            None => match &transaction_info.v0_loaded_message {
+                Some(msg) =>
+                    Ok((msg.loaded_addresses.writable.iter().collect(),
+                        msg.loaded_addresses.readonly.iter().collect())),
+                None => Err(
+                    GeyserPluginError::Custom(
+                        Box::new(
+                            GeyserPluginPostgresError::TransactionAccountUpdateError {
+                                msg: "Invalid DbTransaction: message is empty".to_string()
+                            }
+                        )
+                    )
+                ),
+            }
+        }
+    }
+
+    pub(crate) fn log_accounts(
+        client: &mut Client,
+        statement: &Statement,
+        signature: &Vec<u8>,
+        accounts: &Vec<&Vec<u8>>,
+        is_writable: bool,
+    ) -> Result<(), GeyserPluginError> {
+        for key in accounts {
+            let result = client.query(
+                statement,
+                &[
+                    signature,
+                    &key,
+                    &is_writable,
+                ],
+            );
+
+            if let Err(err) = result {
+                let msg = format!(
+                    "Failed to persist transaction-account relation info to the PostgreSQL database. Error: {:?}",
+                    err
+                );
+                error!("{}", msg);
+                return Err(
+                    GeyserPluginError::Custom(
+                        Box::new(
+                            GeyserPluginPostgresError::TransactionAccountUpdateError {
+                                msg: msg
+                            }
+                        )
+                    )
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn log_transaction_account(
+        &mut self,
+        transaction_info: DbTransaction,
+    ) -> Result<(), GeyserPluginError> {
+        let client = self.client.get_mut().unwrap();
+        let statement = &client.update_transaction_account_stmt;
+        let client = &mut client.client;
+
+        let (writable, readonly) = Self::get_account_groups(&transaction_info)?;
+        Self::log_accounts(client, statement, &transaction_info.signature, &writable, true)?;
+        Self::log_accounts(client, statement, &transaction_info.signature,&readonly, false)
+    }
+
     pub(crate) fn log_transaction_impl(
         &mut self,
         transaction_log_info: LogTransactionRequest,
@@ -590,6 +712,8 @@ impl SimplePostgresClient {
             error!("{}", msg);
             return Err(GeyserPluginError::AccountsUpdateError { msg });
         }
+
+        self.log_transaction_account(transaction_info)?;
 
         Ok(())
     }

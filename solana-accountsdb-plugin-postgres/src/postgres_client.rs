@@ -59,6 +59,7 @@ struct PostgresSqlClientWrapper {
     insert_token_mint_index_stmt: Option<Statement>,
     bulk_insert_token_owner_index_stmt: Option<Statement>,
     bulk_insert_token_mint_index_stmt: Option<Statement>,
+    update_transaction_account_stmt: Statement,
 }
 
 pub struct SimplePostgresClient {
@@ -389,11 +390,11 @@ impl SimplePostgresClient {
         client: &mut Client,
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
-        let stmt = "INSERT INTO account AS acct (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
-        ON CONFLICT (pubkey) DO UPDATE SET slot=excluded.slot, owner=excluded.owner, lamports=excluded.lamports, executable=excluded.executable, rent_epoch=excluded.rent_epoch, \
-        data=excluded.data, write_version=excluded.write_version, updated_on=excluded.updated_on  WHERE acct.slot < excluded.slot OR (\
-        acct.slot = excluded.slot AND acct.write_version < excluded.write_version)";
+        let stmt = "INSERT INTO account AS acct (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on, txn_signature) \
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+        ON CONFLICT (pubkey, slot, write_version) DO UPDATE SET \
+        owner=excluded.owner, lamports=excluded.lamports, executable=excluded.executable, rent_epoch=excluded.rent_epoch, \
+        data=excluded.data, updated_on=excluded.updated_on, txn_signature=excluded.txn_signature";
 
         let stmt = client.prepare(stmt);
 
@@ -557,6 +558,7 @@ impl SimplePostgresClient {
                 &account.data(),
                 &account.write_version(),
                 &updated_on,
+                &account.txn_signature(),
             ],
         );
 
@@ -826,6 +828,11 @@ impl SimplePostgresClient {
             None
         };
 
+        let update_transaction_account_stmt = Self::build_update_transaction_account_statement(
+            &mut client,
+            config,
+        )?;
+
         info!("Created SimplePostgresClient.");
         Ok(Self {
             batch_size,
@@ -843,6 +850,7 @@ impl SimplePostgresClient {
                 insert_token_mint_index_stmt,
                 bulk_insert_token_owner_index_stmt,
                 bulk_insert_token_mint_index_stmt,
+                update_transaction_account_stmt,
             }),
             index_token_owner: config.index_token_owner.unwrap_or_default(),
             index_token_mint: config.index_token_mint.unwrap_or(false),

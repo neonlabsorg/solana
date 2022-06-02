@@ -96,6 +96,12 @@ pub enum GeyserPluginPostgresError {
 
     #[error("Replica account V0.0.1 not supported anymore")]
     ReplicaAccountV001NotSupported,
+
+    #[error("Failed to parse account key from transaction message")]
+    AccountKeyParseError,
+
+    #[error("Failed to update transaction-account linkage: ({msg})")]
+    TransactionAccountUpdateError { msg: String },
 }
 
 impl GeyserPlugin for GeyserPluginPostgres {
