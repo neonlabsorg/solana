@@ -191,6 +191,15 @@ pub const MAX_LEADER_SCHEDULE_STAKES: Epoch = 5;
 
 pub type Rewrites = RwLock<HashMap<Pubkey, Hash>>;
 
+#[derive(Default)]
+struct RentMetrics {
+    hold_range_us: AtomicU64,
+    load_us: AtomicU64,
+    collect_us: AtomicU64,
+    hash_us: AtomicU64,
+    store_us: AtomicU64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RentDebit {
     rent_collected: u64,
@@ -1750,7 +1759,7 @@ impl Bank {
         );
 
         let (epoch_stakes, epoch_stakes_time) =
-            Measure::this(|_| parent.epoch_stakes.clone(), (), "epoch_stakes_reation");
+            Measure::this(|_| parent.epoch_stakes.clone(), (), "epoch_stakes_creation");
 
         let (builtin_programs, builtin_programs_time) = Measure::this(
             |_| parent.builtin_programs.clone(),
@@ -3076,13 +3085,9 @@ impl Bank {
             metrics.invalid_cached_vote_accounts += invalid_cached_vote_accounts;
             metrics.invalid_cached_stake_accounts += invalid_cached_stake_accounts;
             metrics.vote_accounts_cache_miss_count += vote_accounts_cache_miss_count;
-            let evict_invalid_stakes_cache_entries = self
-                .feature_set
-                .is_active(&feature_set::evict_invalid_stakes_cache_entries::id());
             self.stakes_cache.handle_invalid_keys(
                 invalid_stake_keys,
                 invalid_vote_keys,
-                evict_invalid_stakes_cache_entries,
                 self.slot(),
             );
             vote_with_stake_delegations_map
@@ -5173,9 +5178,12 @@ impl Bank {
         let mut measure = Measure::start("collect_rent_eagerly-ms");
         let partitions = self.rent_collection_partitions();
         let count = partitions.len();
+        let rent_metrics = RentMetrics::default();
         let account_count: usize = partitions
             .into_iter()
-            .map(|partition| self.collect_rent_in_partition(partition, just_rewrites))
+            .map(|partition| {
+                self.collect_rent_in_partition(partition, just_rewrites, &rent_metrics)
+            })
             .sum();
         measure.stop();
         datapoint_info!(
@@ -5188,6 +5196,15 @@ impl Bank {
                 i64
             ),
             ("total_time_us", measure.as_us(), i64),
+            (
+                "hold_range_us",
+                rent_metrics.hold_range_us.load(Relaxed),
+                i64
+            ),
+            ("load_us", rent_metrics.load_us.load(Relaxed), i64),
+            ("collect_us", rent_metrics.collect_us.load(Relaxed), i64),
+            ("hash_us", rent_metrics.hash_us.load(Relaxed), i64),
+            ("store_us", rent_metrics.store_us.load(Relaxed), i64),
         );
     }
 
@@ -5222,33 +5239,49 @@ impl Bank {
     /// update bank's rewrites set for all rewrites that were skipped
     /// if 'just_rewrites', function will only update bank's rewrites set and not actually store any accounts
     /// return # accounts loaded
-    fn collect_rent_in_partition(&self, partition: Partition, just_rewrites: bool) -> usize {
+    fn collect_rent_in_partition(
+        &self,
+        partition: Partition,
+        just_rewrites: bool,
+        metrics: &RentMetrics,
+    ) -> usize {
         let subrange = Self::pubkey_range_from_partition(partition);
 
+        let mut hold_range = Measure::start("hold_range");
         let thread_pool = &self.rc.accounts.accounts_db.thread_pool;
         self.rc
             .accounts
             .hold_range_in_memory(&subrange, true, thread_pool);
+        hold_range.stop();
 
+        let mut load = Measure::start("load");
         let accounts = self
             .rc
             .accounts
             .load_to_collect_rent_eagerly(&self.ancestors, subrange.clone());
         let account_count = accounts.len();
+        load.stop();
+        metrics.load_us.fetch_add(load.as_us(), Relaxed);
 
         // parallelize?
         let mut rent_debits = RentDebits::default();
         let mut total_collected = CollectedInfo::default();
         let bank_slot = self.slot();
         let mut rewrites_skipped = Vec::with_capacity(accounts.len());
+        let mut collect_us = 0;
+        let mut hash_skipped_rewrites_us = 0;
+        let mut store_us = 0;
         let can_skip_rewrites = self.rc.accounts.accounts_db.skip_rewrites || just_rewrites;
         for (pubkey, mut account, loaded_slot) in accounts {
             let old_rent_epoch = account.rent_epoch();
+            let mut time = Measure::start("collect");
             let collected = self.rent_collector.collect_from_existing_account(
                 &pubkey,
                 &mut account,
                 self.rc.accounts.accounts_db.filler_account_suffix.as_ref(),
             );
+            time.stop();
+            collect_us += time.as_us();
             // only store accounts where we collected rent
             // but get the hash for all these accounts even if collected rent is 0 (= not updated).
             // Also, there's another subtle side-effect from this: this
@@ -5266,16 +5299,27 @@ impl Bank {
                 // this would have been rewritten previously. Now we skip it.
                 // calculate the hash that we would have gotten if we did the rewrite.
                 // This will be needed to calculate the bank's hash.
+                let mut time = Measure::start("hash_account");
                 let hash =
                     crate::accounts_db::AccountsDb::hash_account(self.slot(), &account, &pubkey);
+                time.stop();
+                hash_skipped_rewrites_us += time.as_us();
                 rewrites_skipped.push((pubkey, hash));
                 assert_eq!(collected, CollectedInfo::default());
             } else if !just_rewrites {
+                let mut time = Measure::start("store_account");
                 total_collected += collected;
                 self.store_account(&pubkey, &account);
+                time.stop();
+                store_us += time.as_us();
             }
             rent_debits.insert(&pubkey, collected.rent_amount, account.lamports());
         }
+        metrics.hold_range_us.fetch_add(hold_range.as_us(), Relaxed);
+        metrics.collect_us.fetch_add(collect_us, Relaxed);
+        metrics.hash_us.fetch_add(hash_skipped_rewrites_us, Relaxed);
+        metrics.store_us.fetch_add(store_us, Relaxed);
+
         self.remember_skipped_rewrites(rewrites_skipped);
         self.collected_rent
             .fetch_add(total_collected.rent_amount, Relaxed);
@@ -9383,7 +9427,7 @@ pub(crate) mod tests {
 
         assert_eq!(bank.collected_rent.load(Relaxed), 0);
         assert!(bank.rewrites_skipped_this_slot.read().unwrap().is_empty());
-        bank.collect_rent_in_partition((0, 0, 1), true);
+        bank.collect_rent_in_partition((0, 0, 1), true, &RentMetrics::default());
         {
             let rewrites_skipped = bank.rewrites_skipped_this_slot.read().unwrap();
             // `rewrites_skipped.len()` is the number of non-rent paying accounts in the slot. This
@@ -9405,7 +9449,7 @@ pub(crate) mod tests {
         }
 
         assert_eq!(bank.collected_rent.load(Relaxed), 0);
-        bank.collect_rent_in_partition((0, 0, 1), false); // all range
+        bank.collect_rent_in_partition((0, 0, 1), false, &RentMetrics::default()); // all range
 
         assert_eq!(bank.collected_rent.load(Relaxed), rent_collected);
         assert_eq!(
@@ -9488,8 +9532,8 @@ pub(crate) mod tests {
         assert_eq!(hash1_with_zero, hash1_without_zero);
         assert_ne!(hash1_with_zero, Hash::default());
 
-        bank2_with_zero.collect_rent_in_partition((0, 0, 1), false); // all
-        bank2_without_zero.collect_rent_in_partition((0, 0, 1), false); // all
+        bank2_with_zero.collect_rent_in_partition((0, 0, 1), false, &RentMetrics::default()); // all
+        bank2_without_zero.collect_rent_in_partition((0, 0, 1), false, &RentMetrics::default()); // all
 
         bank2_with_zero.freeze();
         let hash2_with_zero = bank2_with_zero.hash();

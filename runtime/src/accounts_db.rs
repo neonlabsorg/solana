@@ -3168,7 +3168,7 @@ impl AccountsDb {
             find_alive_elapsed = start.as_us();
 
             let (shrunken_store, time) = self.get_store_for_shrink(slot, aligned_total);
-            create_and_insert_store_elapsed = time;
+            create_and_insert_store_elapsed = time.as_micros() as u64;
 
             // here, we're writing back alive_accounts. That should be an atomic operation
             // without use of rather wide locks in this whole function, because we're
@@ -3297,7 +3297,7 @@ impl AccountsDb {
         &self,
         slot: Slot,
         aligned_total: u64,
-    ) -> (Arc<AccountStorageEntry>, u64) {
+    ) -> (Arc<AccountStorageEntry>, Duration) {
         let mut start = Measure::start("create_and_insert_store_elapsed");
         let shrunken_store = if let Some(new_store) =
             self.try_recycle_and_insert_store(slot, aligned_total, aligned_total + 1024)
@@ -3317,7 +3317,7 @@ impl AccountsDb {
             }
         };
         start.stop();
-        (shrunken_store, start.as_us())
+        (shrunken_store, Duration::from_micros(start.as_us()))
     }
 
     // Reads all accounts in given slot's AppendVecs and filter only to alive,
@@ -3487,10 +3487,7 @@ impl AccountsDb {
             get_ancient_append_vec_capacity(),
             new_ancient_storage.append_vec_id(),
         );
-        (
-            Some((slot, new_ancient_storage)),
-            Duration::from_micros(time),
-        )
+        (Some((slot, new_ancient_storage)), time)
     }
 
     /// return true if created
@@ -3978,6 +3975,7 @@ impl AccountsDb {
         collector
     }
 
+    /// Only guaranteed to be safe when called from rent collection
     pub fn range_scan_accounts<F, A, R>(
         &self,
         metric_name: &'static str,
@@ -4007,12 +4005,13 @@ impl AccountsDb {
                 // meaning no other subsystems can invalidate the account_info before making their
                 // changes to the index entry.
                 // For details, see the comment in retry_to_get_account_accessor()
-                let account_slot = self
+                if let Some(account_slot) = self
                     .get_account_accessor(slot, pubkey, &account_info.storage_location())
                     .get_loaded_account()
                     .map(|loaded_account| (pubkey, loaded_account.take_account(), slot))
-                    .unwrap();
-                scan_func(&mut collector, Some(account_slot))
+                {
+                    scan_func(&mut collector, Some(account_slot))
+                }
             },
         );
         collector
