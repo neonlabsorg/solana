@@ -1,5 +1,5 @@
 {
-    "libpath": "/opt/solana/bin/libsolana_accountsdb_plugin_postgres.so",
+    "libpath": "/opt/solana/bin/libsolana_geyser_plugin_postgres.so",
     "connection_str": "host=postgres port=5432 dbname=solana user=solana-user password=solana-pass",
     "threads": 20,
     "batch_size": 20,

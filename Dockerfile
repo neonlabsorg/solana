@@ -22,7 +22,7 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/target/release/solana-keygen \
                     /opt/target/release/solana-validator \
                     /opt/target/release/solana-genesis \
-                    /opt/target/release/libsolana_accountsdb_plugin_postgres.so \
+                    /opt/target/release/libsolana_geyser_plugin_postgres.so \
                     /opt/solana/bin/
 
 COPY --from=builder /opt/scripts/run.sh /opt/fetch-spl.sh /opt/solana/
