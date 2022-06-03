@@ -3,7 +3,7 @@ use {
     crate::geyser_plugin_manager::GeyserPluginManager,
     log::*,
     solana_geyser_plugin_interface::geyser_plugin_interface::{
-        ReplicaAccountInfoVersions, ReplicaAccountInfoWithSignature,
+        ReplicaAccountInfoVersions, ReplicaAccountInfoV2,
     },
     solana_measure::measure::Measure,
     solana_metrics::*,
@@ -29,7 +29,7 @@ impl AccountsUpdateNotifierInterface for AccountsUpdateNotifierImpl {
         slot: Slot,
         meta: &StoredMeta,
         account: &AccountSharedData,
-        txn_signature: &Signature,
+        txn_signature: &Option<&Signature>,
     ) {
         if let Some(account_info) =
             self.accountinfo_from_shared_account_data(meta, account, txn_signature)
@@ -106,9 +106,9 @@ impl AccountsUpdateNotifierImpl {
         &self,
         meta: &'a StoredMeta,
         account: &'a AccountSharedData,
-        txn_signature: &'a Signature,
-    ) -> Option<ReplicaAccountInfoWithSignature<'a>> {
-        Some(ReplicaAccountInfoWithSignature {
+        txn_signature: &'a Option<&'a Signature>,
+    ) -> Option<ReplicaAccountInfoV2<'a>> {
+        Some(ReplicaAccountInfoV2 {
             pubkey: meta.pubkey.as_ref(),
             lamports: account.lamports(),
             owner: account.owner().as_ref(),
@@ -116,15 +116,15 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: account.rent_epoch(),
             data: account.data(),
             write_version: meta.write_version,
-            txn_signature: Some(txn_signature),
+            txn_signature: txn_signature.clone(),
         })
     }
 
     fn accountinfo_from_stored_account_meta<'a>(
         &self,
         stored_account_meta: &'a StoredAccountMeta,
-    ) -> Option<ReplicaAccountInfoWithSignature<'a>> {
-        Some(ReplicaAccountInfoWithSignature {
+    ) -> Option<ReplicaAccountInfoV2<'a>> {
+        Some(ReplicaAccountInfoV2 {
             pubkey: stored_account_meta.meta.pubkey.as_ref(),
             lamports: stored_account_meta.account_meta.lamports,
             owner: stored_account_meta.account_meta.owner.as_ref(),
@@ -138,7 +138,7 @@ impl AccountsUpdateNotifierImpl {
 
     fn notify_plugins_of_account_update(
         &self,
-        account: ReplicaAccountInfoWithSignature,
+        account: ReplicaAccountInfoV2,
         slot: Slot,
         is_startup: bool,
     ) {
