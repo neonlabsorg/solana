@@ -406,7 +406,7 @@ pub fn run(
 
     println!("");
     for i in accounts_ordered{
-        println!("{:?}", i.0);
+        println!("{:?}", i);
     }
 
     Ok(())

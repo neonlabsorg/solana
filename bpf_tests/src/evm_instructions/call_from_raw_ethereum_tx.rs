@@ -115,14 +115,15 @@ pub fn process(
     let treasury_key = Pubkey::create_with_seed(&collateral_pool_base, &seed, &evm_loader_key).unwrap();
 
     //caller
-    let caller_address = H160::from_str("0000000000000000000000000000000000000001").unwrap();
+    let caller_address = H160::from_str("1000000000000000000000000000000000000001").unwrap();
     let caller_seeds = [ &[ACCOUNT_SEED_VERSION], caller_address.as_bytes()];
     let  (caller_key, caller_key_nonce) = Pubkey::find_program_address(&caller_seeds, &evm_loader_key);
     let mut caller  = ether_account::Data {
         address : caller_address,
         bump_seed: caller_key_nonce,
         trx_count: 0,
-        balance: U256::from(1_000_000_000_000_000_000_u64),
+        // balance: U256::from(1_000_000_000_000_000_000_u64),
+        balance: U256::from(1_000_000_000_u64),
         code_account: None,
         rw_blocked:  false,
         ro_blocked_count: 0,
@@ -134,7 +135,7 @@ pub fn process(
     caller.pack(bytes);
 
     // contract
-    let contract_address = H160::from_str("0000000000000000000000000000000000000002").unwrap();
+    let contract_address = H160::from_str("2000000000000000000000000000000000000002").unwrap();
     let contract_seeds = [ &[ACCOUNT_SEED_VERSION], contract_address.as_bytes()];
     let  (contract_key, contract_key_nonce) = Pubkey::find_program_address(&contract_seeds, &evm_loader_key);
 

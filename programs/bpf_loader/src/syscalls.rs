@@ -147,6 +147,7 @@ pub fn register_syscalls(
 
     syscall_registry.register_syscall_by_name(b"sol_sha256", SyscallSha256::call)?;
     syscall_registry.register_syscall_by_name(b"sol_keccak256", SyscallKeccak256::call)?;
+    syscall_registry.register_syscall_by_name(b"sol_send_trace_message", SyscallSendTraceMessage::call)?;
 
     if invoke_context
         .feature_set
@@ -1367,6 +1368,82 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallKeccak256<'a, 'b> {
             }
         }
         hash_result.copy_from_slice(&hasher.result().to_bytes());
+        *result = Ok(0);
+    }
+}
+
+// Send message to tracer-api
+pub struct SyscallSendTraceMessage<'a, 'b> {
+    invoke_context: Rc<RefCell<&'a mut InvokeContext<'b>>>,
+}
+impl<'a, 'b> SyscallObject<BpfError> for SyscallSendTraceMessage<'a, 'b> {
+    fn call(
+        &mut self,
+        vals_addr: u64,
+        vals_len: u64,
+        _arg3: u64,
+        _arg4: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        println!("SyscallSendTraceMessage::call()");
+        let invoke_context = question_mark!(
+            self.invoke_context
+                .try_borrow()
+                .map_err(|_| SyscallError::InvokeContextBorrowFailed),
+            result
+        );
+        let compute_budget = invoke_context.get_compute_budget();
+        if invoke_context
+            .feature_set
+            .is_active(&update_syscall_base_costs::id())
+            && compute_budget.sha256_max_slices < vals_len
+        {
+            ic_msg!(
+                invoke_context,
+                "Keccak256 hashing {} sequences in one syscall is over the limit {}",
+                vals_len,
+                compute_budget.sha256_max_slices,
+            );
+            *result = Err(SyscallError::TooManySlices.into());
+            return;
+        }
+        question_mark!(
+            invoke_context
+                .get_compute_meter()
+                .consume(compute_budget.sha256_base_cost),
+            result
+        );
+
+        let loader_id = question_mark!(
+            invoke_context
+                .get_loader()
+                .map_err(SyscallError::InstructionError),
+            result
+        );
+
+
+        if vals_len > 0 {
+            let vals = question_mark!(
+                translate_slice::<u8>(memory_mapping, vals_addr, vals_len, &loader_id),
+                result
+            );
+            println!("vals  {:?}", vals);
+            // let cost = if invoke_context
+            //     .feature_set
+            //     .is_active(&update_syscall_base_costs::id())
+            // {
+            //     compute_budget.mem_op_base_cost.max(
+            //         compute_budget
+            //             .sha256_byte_cost
+            //             .saturating_mul(val.len() as u64 / 2),
+            //     )
+            // } else {
+            //     compute_budget.sha256_byte_cost * (val.len() as u64 / 2)
+            // };
+            // question_mark!(invoke_context.get_compute_meter().consume(cost), result);
+        }
         *result = Ok(0);
     }
 }

@@ -68,7 +68,7 @@ pub fn feature_set() -> Arc<FeatureSet> {
     let mut features = FeatureSet::all_enabled();
     features.deactivate(&tx_wide_compute_cap::id());
     features.deactivate(&requestable_heap_size ::id());
-    features.deactivate(&prevent_calling_precompiles_as_programs ::id());
+    // features.deactivate(&prevent_calling_precompiles_as_programs ::id());
     Arc::new(features)
 }
 
@@ -140,7 +140,7 @@ pub fn make_ethereum_transaction(
             to: Some(*to),
             nonce: trx_count,
             gas_limit: 9_999_999_999_u64.into(),
-            gas_price: 10_u64.pow(9).into(),
+            gas_price: 10_u64.pow(0).into(),
             // value: U256::zero(),
             value: U256::from(10_u64),
             // data: data.to_vec(),
