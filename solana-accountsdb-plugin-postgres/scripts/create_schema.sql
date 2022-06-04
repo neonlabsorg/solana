@@ -5,7 +5,7 @@
 
 
 CREATE TABLE account (
-    pubkey BYTEA,
+    pubkey BYTEA PRIMARY KEY,
     owner BYTEA,
     lamports BIGINT NOT NULL,
     slot BIGINT NOT NULL,
@@ -13,17 +13,12 @@ CREATE TABLE account (
     rent_epoch BIGINT NOT NULL,
     data BYTEA,
     write_version BIGINT NOT NULL,
-    updated_on TIMESTAMP NOT NULL,
-    txn_signature BYTEA,
-
-    CONSTRAINT account_pk PRIMARY KEY (pubkey, slot, write_version)
+    updated_on TIMESTAMP NOT NULL
 );
 
 CREATE INDEX account_owner ON account (owner);
 
 CREATE INDEX account_slot ON account (slot);
-
-CREATE INDEX account_txn_signature ON account (txn_signature);
 
 -- The table storing slot information
 CREATE TABLE slot (
@@ -172,8 +167,6 @@ CREATE TABLE transaction (
     CONSTRAINT transaction_pk PRIMARY KEY (slot, signature)
 );
 
-CREATE INDEX transaction_signature ON transaction (signature);
-
 -- The table storing block metadata
 CREATE TABLE block (
     slot BIGINT PRIMARY KEY,
@@ -236,11 +229,3 @@ $audit_account_update$ LANGUAGE plpgsql;
 
 CREATE TRIGGER account_update_trigger AFTER UPDATE OR DELETE ON account
     FOR EACH ROW EXECUTE PROCEDURE audit_account_update();
-
-CREATE TABLE transaction_account (
-    signature BYTEA,
-    pubkey BYTEA,
-    is_writable BOOL,
-
-    CONSTRAINT txn_acc_pk PRIMARY KEY (signature, pubkey)
-)
