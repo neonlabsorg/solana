@@ -370,13 +370,13 @@ impl GeyserPlugin for GeyserPluginPostgres {
                         return Ok(());
                     }
 
-                    /*let result = client.log_transaction_info(transaction_info, slot);
+                    let result = client.log_transaction_info(transaction_info, slot);
 
                     if let Err(err) = result {
                         return Err(GeyserPluginError::SlotStatusUpdateError{
                                 msg: format!("Failed to persist the transaction info to the PostgreSQL database. Error: {:?}", err)
                             });
-                    }*/
+                    }
                 }
             },
         }
