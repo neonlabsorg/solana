@@ -713,7 +713,7 @@ impl SimplePostgresClient {
             return Err(GeyserPluginError::AccountsUpdateError { msg });
         }
 
-        self.log_transaction_account(transaction_info)?;
+        //self.log_transaction_account(transaction_info)?;
 
         Ok(())
     }
