@@ -4571,9 +4571,19 @@ dependencies = [
 name = "solana-cargo-build-bpf"
 version = "1.11.0"
 dependencies = [
+ "cargo_metadata",
+ "clap 3.1.8",
+ "solana-sdk 1.11.0",
+]
+
+[[package]]
+name = "solana-cargo-build-sbf"
+version = "1.11.0"
+dependencies = [
  "bzip2",
  "cargo_metadata",
- "clap 3.1.18",
+ "clap 3.1.8",
+ "log",
  "regex",
  "serial_test 0.6.0",
  "solana-download-utils",
@@ -4587,6 +4597,14 @@ version = "1.11.0"
 dependencies = [
  "cargo_metadata",
  "clap 3.1.18",
+]
+
+[[package]]
+name = "solana-cargo-test-sbf"
+version = "1.11.0"
+dependencies = [
+ "cargo_metadata",
+ "clap 3.1.8",
 ]
 
 [[package]]
@@ -4733,7 +4751,6 @@ dependencies = [
  "jsonrpc-http-server",
  "lazy_static",
  "log",
- "lru",
  "quinn",
  "quinn-proto",
  "rand 0.7.3",
