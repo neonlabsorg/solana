@@ -339,6 +339,13 @@ pub fn bind_syscall_context_objects<'a, 'b>(
     )?;
 
     vm.bind_syscall_context_object(
+        Box::new(SyscallSendTraceMessage {
+            invoke_context: invoke_context.clone(),
+        }),
+        None,
+    )?;
+
+    vm.bind_syscall_context_object(
         Box::new(SyscallMemcpy {
             invoke_context: invoke_context.clone(),
         }),
@@ -1388,12 +1395,15 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallSendTraceMessage<'a, 'b> {
         result: &mut Result<u64, EbpfError<BpfError>>,
     ) {
         println!("SyscallSendTraceMessage::call()");
+
+
         let invoke_context = question_mark!(
             self.invoke_context
-                .try_borrow()
+                .try_borrow_mut()
                 .map_err(|_| SyscallError::InvokeContextBorrowFailed),
             result
         );
+
         let compute_budget = invoke_context.get_compute_budget();
         if invoke_context
             .feature_set
@@ -1430,19 +1440,6 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallSendTraceMessage<'a, 'b> {
                 result
             );
             println!("vals  {:?}", vals);
-            // let cost = if invoke_context
-            //     .feature_set
-            //     .is_active(&update_syscall_base_costs::id())
-            // {
-            //     compute_budget.mem_op_base_cost.max(
-            //         compute_budget
-            //             .sha256_byte_cost
-            //             .saturating_mul(val.len() as u64 / 2),
-            //     )
-            // } else {
-            //     compute_budget.sha256_byte_cost * (val.len() as u64 / 2)
-            // };
-            // question_mark!(invoke_context.get_compute_meter().consume(cost), result);
         }
         *result = Ok(0);
     }

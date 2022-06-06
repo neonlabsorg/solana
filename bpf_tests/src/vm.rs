@@ -330,7 +330,7 @@ pub fn run(
     let logs = Rc::new(RefCell::new(LogCollector::default()));
 
     // secp256k1_program
-    verify_precompiles(message, features).map_err(|e| anyhow!("precompile instruction error: {:?}", e )).unwrap();
+    // verify_precompiles(message, features).map_err(|e| anyhow!("precompile instruction error: {:?}", e )).unwrap();
 
     // println!("verify_precompiles is completed");
 
