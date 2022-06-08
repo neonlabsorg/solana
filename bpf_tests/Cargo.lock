@@ -235,6 +235,7 @@ name = "bpf-tests"
 version = "1.0.1"
 dependencies = [
  "anyhow",
+ "arrayref",
  "bincode",
  "evm",
  "evm-loader",
@@ -250,7 +251,7 @@ dependencies = [
  "solana-runtime",
  "solana-sdk",
  "solana_rbpf",
- "spl-token",
+ "spl-token 3.3.0",
  "structopt",
 ]
 
@@ -666,7 +667,7 @@ dependencies = [
 [[package]]
 name = "evm"
 version = "0.18.0"
-source = "git+https://github.com/neonlabsorg/neon-evm?branch=develop#1b32cec11d7bdf1bf48e8908cfee1d9f4169119c"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
 dependencies = [
  "evm-core",
  "evm-runtime",
@@ -680,7 +681,7 @@ dependencies = [
 [[package]]
 name = "evm-core"
 version = "0.18.2"
-source = "git+https://github.com/neonlabsorg/neon-evm?branch=develop#1b32cec11d7bdf1bf48e8908cfee1d9f4169119c"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
 dependencies = [
  "fixed-hash",
  "impl-rlp",
@@ -693,8 +694,8 @@ dependencies = [
 
 [[package]]
 name = "evm-loader"
-version = "0.7.5-dev"
-source = "git+https://github.com/neonlabsorg/neon-evm?branch=develop#1b32cec11d7bdf1bf48e8908cfee1d9f4169119c"
+version = "0.7.6-dev"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
 dependencies = [
  "arrayref",
  "bincode",
@@ -716,16 +717,16 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_derive",
- "solana-program 1.9.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "solana-program 1.9.12 (git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api)",
  "spl-associated-token-account",
- "spl-token",
+ "spl-token 3.2.0",
  "thiserror",
 ]
 
 [[package]]
 name = "evm-runtime"
 version = "0.18.0"
-source = "git+https://github.com/neonlabsorg/neon-evm?branch=develop#1b32cec11d7bdf1bf48e8908cfee1d9f4169119c"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
 dependencies = [
  "evm-core",
  "serde",
@@ -2178,6 +2179,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-frozen-abi"
+version = "1.9.12"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
+dependencies = [
+ "bs58 0.4.0",
+ "bv",
+ "generic-array 0.14.4",
+ "log",
+ "memmap2",
+ "rustc_version",
+ "serde",
+ "serde_derive",
+ "sha2",
+ "solana-frozen-abi-macro 1.9.12 (git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api)",
+ "solana-logger 1.9.12 (git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api)",
+ "thiserror",
+]
+
+[[package]]
 name = "solana-frozen-abi-macro"
 version = "1.9.12"
 dependencies = [
@@ -2200,6 +2220,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-frozen-abi-macro"
+version = "1.9.12"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+ "syn",
+]
+
+[[package]]
 name = "solana-logger"
 version = "1.9.12"
 dependencies = [
@@ -2213,6 +2244,16 @@ name = "solana-logger"
 version = "1.9.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e3e1c7bf616aa4926d70dd9015077fcccd88c9271cef29c9038e76a2da1ac5d"
+dependencies = [
+ "env_logger",
+ "lazy_static",
+ "log",
+]
+
+[[package]]
+name = "solana-logger"
+version = "1.9.12"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
 dependencies = [
  "env_logger",
  "lazy_static",
@@ -2319,6 +2360,48 @@ dependencies = [
  "solana-frozen-abi-macro 1.9.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "solana-logger 1.9.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "solana-sdk-macro 1.9.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "thiserror",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "solana-program"
+version = "1.9.12"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
+dependencies = [
+ "base64 0.13.0",
+ "bincode",
+ "bitflags",
+ "blake3",
+ "borsh",
+ "borsh-derive",
+ "bs58 0.4.0",
+ "bv",
+ "bytemuck",
+ "console_error_panic_hook",
+ "console_log",
+ "curve25519-dalek",
+ "getrandom",
+ "itertools",
+ "js-sys",
+ "lazy_static",
+ "libsecp256k1",
+ "log",
+ "num-derive",
+ "num-traits",
+ "parking_lot",
+ "rand",
+ "rustc_version",
+ "rustversion",
+ "serde",
+ "serde_bytes",
+ "serde_derive",
+ "sha2",
+ "sha3 0.9.1",
+ "solana-frozen-abi 1.9.12 (git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api)",
+ "solana-frozen-abi-macro 1.9.12 (git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api)",
+ "solana-logger 1.9.12 (git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api)",
+ "solana-sdk-macro 1.9.12 (git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api)",
  "thiserror",
  "wasm-bindgen",
 ]
@@ -2480,6 +2563,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-sdk-macro"
+version = "1.9.12"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
+dependencies = [
+ "bs58 0.4.0",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn",
+]
+
+[[package]]
 name = "solana-stake-program"
 version = "1.9.12"
 dependencies = [
@@ -2547,13 +2642,24 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "spl-associated-token-account"
-version = "1.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b013067447a1396303ddfc294f36e3d260a32f8a16c501c295bcdc7de39b490"
+version = "1.0.2"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
 dependencies = [
- "borsh",
- "solana-program 1.9.12 (registry+https://github.com/rust-lang/crates.io-index)",
- "spl-token",
+ "solana-program 1.9.12 (git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api)",
+ "spl-token 3.2.0",
+]
+
+[[package]]
+name = "spl-token"
+version = "3.2.0"
+source = "git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api#14315f82b3e079eb88360d36e3a53e9cc0741fe2"
+dependencies = [
+ "arrayref",
+ "num-derive",
+ "num-traits",
+ "num_enum",
+ "solana-program 1.9.12 (git+https://github.com/neonlabsorg/neon-evm?branch=688_syscall_tracer_api)",
+ "thiserror",
 ]
 
 [[package]]

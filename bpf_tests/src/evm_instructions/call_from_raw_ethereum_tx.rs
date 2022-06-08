@@ -70,13 +70,14 @@ use evm::Valids;
 use std::path::PathBuf;
 
 
+use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 
-pub fn read_contract(file_name: &str)->std::io::Result<Vec<u8>> {
-    let mut f = File::open(file_name)?;
-    let mut bin = vec![];
-    f.read_to_end(&mut bin)?;
-    Ok(bin)
-}
+// pub fn read_contract(file_name: &str)->std::io::Result<Vec<u8>> {
+//     let mut f = File::open(file_name)?;
+//     let mut bin = vec![];
+//     f.read_to_end(&mut bin)?;
+//     Ok(bin)
+// }
 
 
 
@@ -101,11 +102,11 @@ pub fn process(
     let evm_contract = read_elf::read_so(opt)?;
 
     let mut path_bin =  PathBuf::new();
-    path_bin.push("/home/user/CLionProjects/neonlabs/solana/bpf_tests/evm_loader_orig.bin");
+    path_bin.push("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/evm_loader_orig.bin");
     let evm_loader_bin = read_elf::read_bin(path_bin)?;
 
     let evm_loader_key = Pubkey::from_str(&evm_loader_str).unwrap();
-    let operator_key= solana_sdk::pubkey::Pubkey::new_from_array(AUTHORIZED_OPERATOR_LIST[0].to_bytes());
+    let operator_key= Pubkey::new_from_array(AUTHORIZED_OPERATOR_LIST[0].to_bytes());
     let code_key = Pubkey::new_unique();
 
     //treasury
@@ -153,33 +154,43 @@ pub fn process(
     *tag = 10;  // TAG_ACCOUNT
     contract.pack(bytes);
 
-
     //code
-    let hello_world = read_contract("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/helloWorld.binary").unwrap();
-    let code = ether_contract::Data{
-        owner: evm_loader::solana_program::pubkey::Pubkey::new_from_array(contract_key.to_bytes()),
-        code_size: hello_world.len() as u32
-    };
+    let mut path_bin =  PathBuf::new();
+    path_bin.push("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/helloWorld.bin");
+    let mut hello_world_bin = read_elf::read_bin(path_bin)?;
 
-    let code_size = code.code_size as usize;
-    let valids_size = (code_size / 8) + 1;
+    let owner = array_mut_ref![hello_world_bin, 1, 32];
+    owner.copy_from_slice(&contract_key.to_bytes()) ;
 
+    // let mut val = ether_contract::Data::unpack(&hello_world_bin[1..]);
 
-    let mut code_shared = AccountSharedData::new(1_000_000_000_000_000_000, ether_contract::Data::SIZE+1+2048, &evm_loader_key);
+    // let code = ether_contract::Data{
+    //     owner: evm_loader::solana_program::pubkey::Pubkey::new_from_array(contract_key.to_bytes()),
+    //     code_size: val.code_size
+    // };
+    //
+    // let code_size = code.code_size as usize;
+    // let valids_size = (code_size / 8) + 1;
+    //
+    let mut code_shared = AccountSharedData::new(1_000_000_000_000_000_000,
+                                                 0, &evm_loader_key);
 
-    let (tag, rest) = code_shared.data_mut().split_first_mut().expect("error");
-    let (data,  rest) = rest.split_at_mut(ether_contract::Data::SIZE);
-    let (contract_code,  rest) = rest.split_at_mut(code_size);
-    let (mut valids,  storage) = rest.split_at_mut(valids_size);
+    code_shared.set_data(hello_world_bin);
+    // let (tag, rest) = code_shared.data_mut().split_first_mut().expect("error");
+    // let (data,  rest) = rest.split_at_mut(ether_contract::Data::SIZE);
+    // let (contract_code,  rest) = rest.split_at_mut(code_size);
+    // let (mut valids,  storage) = rest.split_at_mut(valids_size);
+    //
+    // *tag = 2;   // TAG_CONTRACT
 
-    *tag = 2;   // TAG_CONTRACT
+    // code.pack(data);
 
-    code.pack(data);
+    // let start = 1 + ether_contract::Data::SIZE;
+    // let a = &hello_world_bin[start..start+code_size];
+    // contract_code[..code_size].copy_from_slice(&a[..]);
 
-    contract_code[..hello_world.len()].copy_from_slice(hello_world.as_slice());
-
-    let values = Valids::compute(hello_world.as_slice());
-    valids[..values.len()].copy_from_slice(values.as_slice());
+    // let values = Valids::compute(contract_code);
+    // valids[..values.len()].copy_from_slice(values.as_slice());
 
 
     let token_key = Pubkey::new_from_array(spl_token::id().to_bytes());
@@ -252,8 +263,8 @@ pub fn process(
     println!("code_key {}\n\r", code_key);
 
 
-    // let (sig, msg) = make_ethereum_transaction(caller.trx_count, &contract.address);
-    let (sig, msg) = make_ethereum_transaction(caller.trx_count, &caller.address);
+    let (sig, msg) = make_ethereum_transaction(caller.trx_count, &contract.address);
+    // let (sig, msg) = make_ethereum_transaction(caller.trx_count, &caller.address);
     let mut ix_data:Vec<u8> = Vec::new();
     ix_data.push(5_u8);
     ix_data.extend_from_slice(&treasury_index.to_le_bytes());
@@ -268,8 +279,8 @@ pub fn process(
         meta
     );
 
-    // let instruction_keccak = make_keccak_instruction(&contract.address).unwrap();
-    let instruction_keccak = make_keccak_instruction(&caller.address).unwrap();
+    let instruction_keccak = make_keccak_instruction(&contract.address).unwrap();
+    // let instruction_keccak = make_keccak_instruction(&caller.address).unwrap();
 
     let message = SanitizedMessage::Legacy(Message::new(
         &[instruction_keccak, instruction_05 ],

@@ -141,10 +141,10 @@ pub fn make_ethereum_transaction(
             nonce: trx_count,
             gas_limit: 9_999_999_999_u64.into(),
             gas_price: 10_u64.pow(0).into(),
-            // value: U256::zero(),
-            value: U256::from(10_u64),
-            // data: data.to_vec(),
-            data: vec![],
+            value: U256::zero(),
+            // value: U256::from(10_u64),
+            data: data.to_vec(),
+            // data: vec![],
             chain_id: CHAIN_ID.into(),
         };
 
