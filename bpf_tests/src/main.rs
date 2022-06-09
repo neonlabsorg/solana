@@ -1,7 +1,7 @@
 mod read_elf;
 mod vm;
 mod evm_instructions;
-mod program_options;
+mod tracing;
 
 use std::{
     env,
@@ -15,24 +15,27 @@ use evm_instructions::{
     keccak_secp256k1,
 };
 
+use tracing::Tracer;
+use solana_bpf_loader_program::syscalls as syscalls;
+
 fn main(){
 
     solana_logger::setup();
 
-    let mut args = env::args().collect::<Vec<_>>();
-    if let Some("run-bpf-tests") = args.get(1).map(|a| a.as_str()) {
-        args.remove(1);
-    }
 
-    let opt = program_options::Opt::from_iter(&args);
 
     // if let Err(e) = create_account_v02::process(&opt) {
     //     eprintln!("error: {:#}", e);
     //     exit(1);
     // }
 
-    if let Err(e) = call_from_raw_ethereum_tx::process(&opt) {
-        eprintln!("error: {:#}", e);
-        exit(1);
-    }
+    let mut tracer = Tracer::new();
+    syscalls::using(&mut tracer, ||{
+
+        if let Err(e) = call_from_raw_ethereum_tx::process() {
+            eprintln!("error: {:#}", e);
+            exit(1);
+        }
+    })
+
 }

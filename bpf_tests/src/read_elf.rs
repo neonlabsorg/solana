@@ -9,7 +9,6 @@ use std::{
     fs,
 
 };
-use crate::program_options;
 
 
 // Start a new process running the program and capturing its output.
@@ -82,28 +81,24 @@ fn remove_bss_sections(module: &Path) -> Result<(), anyhow::Error> {
 }
 
 
-pub fn read_so(opt: &program_options::Opt) -> Result<Vec<u8>, anyhow::Error>{
-    let path = opt.file.with_extension("so");
-    // println!("path = {}", path.to_string_lossy());
+pub fn read_so(filename: &str) -> Result<Vec<u8>, anyhow::Error>{
+    let mut path =  PathBuf::new();
+    path.push(filename);
 
     if !path.exists() {
-        return Err(anyhow!(
-            "No such file or directory: {}",
-            path.to_string_lossy()
-        ).into());
+        return Err(anyhow!("No such file or directory: {}", path.to_string_lossy()).into());
     }
 
     remove_bss_sections(&path)?;
     Ok(fs::read(&path)?)
 }
 
-pub fn read_bin(path :PathBuf ) -> Result<Vec<u8>, anyhow::Error>{
+pub fn read_bin(filename: &str) -> Result<Vec<u8>, anyhow::Error>{
+    let mut path =  PathBuf::new();
+    path.push(filename);
 
     if !path.exists() {
-        return Err(anyhow!(
-            "No such file or directory: {}",
-            path.to_string_lossy()
-        ).into());
+        return Err(anyhow!("No such file or directory: {}", path.to_string_lossy()).into());
     }
     Ok(fs::read(&path)?)
 }

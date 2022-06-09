@@ -1,6 +1,5 @@
 use evm_loader::account::EthereumAccount;
 use crate::read_elf;
-use crate::program_options;
 use crate::vm;
 use bincode::serialize;
 
@@ -41,11 +40,8 @@ use crate::evm_instructions::{
 use std::collections::BTreeMap;
 
 
-pub fn process(
-    opt: &program_options::Opt
-) -> Result<(), anyhow::Error> {
-
-    let evm_contract = read_elf::read_so(opt)?;
+pub fn process() -> Result<(), anyhow::Error> {
+    let evm_contract = read_elf::read_so("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/evm_loader.so")?;
 
     let evm_loader_key = Pubkey::from_str(&evm_loader_str)?;
 

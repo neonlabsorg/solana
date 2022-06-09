@@ -1,6 +1,5 @@
 use crate::evm_instructions::keccak_secp256k1::make_keccak_instruction;
 use crate::read_elf;
-use crate::program_options;
 use crate::vm;
 use bincode::serialize;
 
@@ -95,15 +94,10 @@ pub fn account_info<'a>(key: &'a Pubkey, account: &'a mut Account) -> AccountInf
 }
 
 
-pub fn process(
-    opt: &program_options::Opt
-) -> Result<(), anyhow::Error> {
+pub fn process() -> Result<(), anyhow::Error> {
 
-    let evm_contract = read_elf::read_so(opt)?;
-
-    let mut path_bin =  PathBuf::new();
-    path_bin.push("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/evm_loader_orig.bin");
-    let evm_loader_bin = read_elf::read_bin(path_bin)?;
+    let evm_contract = read_elf::read_so("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/evm_loader.so")?;
+    let evm_loader_bin = read_elf::read_bin("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/evm_loader_orig.bin")?;
 
     let evm_loader_key = Pubkey::from_str(&evm_loader_str).unwrap();
     let operator_key= Pubkey::new_from_array(AUTHORIZED_OPERATOR_LIST[0].to_bytes());
@@ -155,9 +149,7 @@ pub fn process(
     contract.pack(bytes);
 
     //code
-    let mut path_bin =  PathBuf::new();
-    path_bin.push("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/helloWorld.bin");
-    let mut hello_world_bin = read_elf::read_bin(path_bin)?;
+    let mut hello_world_bin = read_elf::read_bin("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/helloWorld.bin")?;
 
     let owner = array_mut_ref![hello_world_bin, 1, 32];
     owner.copy_from_slice(&contract_key.to_bytes()) ;

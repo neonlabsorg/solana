@@ -1,5 +1,4 @@
 use crate::read_elf;
-use crate::program_options;
 use crate::vm;
 use bincode::serialize;
 

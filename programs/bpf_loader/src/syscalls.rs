@@ -57,6 +57,23 @@ use {
     thiserror::Error as ThisError,
 };
 
+environmental::environmental!(listener: dyn EventListener + 'static);
+
+pub trait EventListener {
+        // Handle an [Event]
+    fn event(&mut self, event: &[u8]);
+}
+
+pub(crate) fn with<F: FnOnce(&mut (dyn EventListener + 'static))>(f: F) {
+    listener::with(f);
+}
+
+pub fn using<R, F: FnOnce() -> R>(new: &mut (dyn EventListener + 'static), f: F) -> R {
+    listener::using(new, f)
+}
+
+
+
 /// Maximum signers
 pub const MAX_SIGNERS: usize = 16;
 
@@ -1298,7 +1315,6 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallKeccak256<'a, 'b> {
         memory_mapping: &MemoryMapping,
         result: &mut Result<u64, EbpfError<BpfError>>,
     ) {
-        println!("SyscallKeccak256::call()");
         let invoke_context = question_mark!(
             self.invoke_context
                 .try_borrow()
@@ -1394,35 +1410,10 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallSendTraceMessage<'a, 'b> {
         memory_mapping: &MemoryMapping,
         result: &mut Result<u64, EbpfError<BpfError>>,
     ) {
-        println!("SyscallSendTraceMessage::call()");
-
-
         let invoke_context = question_mark!(
             self.invoke_context
                 .try_borrow_mut()
                 .map_err(|_| SyscallError::InvokeContextBorrowFailed),
-            result
-        );
-
-        let compute_budget = invoke_context.get_compute_budget();
-        if invoke_context
-            .feature_set
-            .is_active(&update_syscall_base_costs::id())
-            && compute_budget.sha256_max_slices < vals_len
-        {
-            ic_msg!(
-                invoke_context,
-                "Keccak256 hashing {} sequences in one syscall is over the limit {}",
-                vals_len,
-                compute_budget.sha256_max_slices,
-            );
-            *result = Err(SyscallError::TooManySlices.into());
-            return;
-        }
-        question_mark!(
-            invoke_context
-                .get_compute_meter()
-                .consume(compute_budget.sha256_base_cost),
             result
         );
 
@@ -1433,13 +1424,12 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallSendTraceMessage<'a, 'b> {
             result
         );
 
-
         if vals_len > 0 {
             let vals = question_mark!(
                 translate_slice::<u8>(memory_mapping, vals_addr, vals_len, &loader_id),
                 result
             );
-            println!("vals  {:?}", vals);
+            with(|listener|{listener.event(vals)});
         }
         *result = Ok(0);
     }
