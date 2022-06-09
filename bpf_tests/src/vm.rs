@@ -137,6 +137,17 @@ fn execute(
     let compute_budget = ComputeBudget {
         max_units: 500_000,
         heap_size: Some(256_usize.saturating_mul(1024)),
+        // syscall_base_cost: 0,
+        // log_64_units: 0,
+        // invoke_units :0,
+        // heap_cost: 0,
+        // sysvar_base_cost: 0,
+        // mem_op_base_cost:0,
+        // secp256k1_recover_cost :0,
+        // create_program_address_units :0,
+        // sha256_base_cost:0,
+        // sha256_byte_cost:0,
+        // cpi_bytes_per_unit:0,
         ..ComputeBudget::default()
     };
 

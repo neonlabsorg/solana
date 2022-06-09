@@ -777,10 +777,13 @@ dependencies = [
 name = "evm-runtime"
 version = "0.18.0"
 dependencies = [
+ "bincode",
+ "environmental",
  "evm-core",
  "serde",
  "serde_bytes",
  "sha3 0.8.2",
+ "solana-program 1.9.12",
 ]
 
 [[package]]
