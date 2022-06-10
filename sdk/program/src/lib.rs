@@ -56,6 +56,7 @@ pub mod system_program;
 pub mod sysvar;
 pub mod wasm;
 pub mod tracer_api;
+pub mod compute_meter_remaining;
 
 #[cfg(target_arch = "bpf")]
 pub use solana_sdk_macro::wasm_bindgen_stub as wasm_bindgen;

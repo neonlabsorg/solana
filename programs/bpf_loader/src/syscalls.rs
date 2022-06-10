@@ -165,6 +165,7 @@ pub fn register_syscalls(
     syscall_registry.register_syscall_by_name(b"sol_sha256", SyscallSha256::call)?;
     syscall_registry.register_syscall_by_name(b"sol_keccak256", SyscallKeccak256::call)?;
     syscall_registry.register_syscall_by_name(b"sol_send_trace_message", SyscallSendTraceMessage::call)?;
+    syscall_registry.register_syscall_by_name(b"sol_compute_meter_remaining", SyscallComputeMeterRemaining::call)?;
 
     if invoke_context
         .feature_set
@@ -357,6 +358,12 @@ pub fn bind_syscall_context_objects<'a, 'b>(
 
     vm.bind_syscall_context_object(
         Box::new(SyscallSendTraceMessage {
+            invoke_context: invoke_context.clone(),
+        }),
+        None,
+    )?;
+    vm.bind_syscall_context_object(
+        Box::new(SyscallComputeMeterRemaining {
             invoke_context: invoke_context.clone(),
         }),
         None,
@@ -1431,6 +1438,52 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallSendTraceMessage<'a, 'b> {
             );
             with(|listener|{listener.event(vals)});
         }
+        *result = Ok(0);
+    }
+}
+
+pub struct SyscallComputeMeterRemaining<'a, 'b> {
+    invoke_context: Rc<RefCell<&'a mut InvokeContext<'b>>>,
+}
+impl<'a, 'b> SyscallObject<BpfError> for SyscallComputeMeterRemaining<'a, 'b> {
+    fn call(
+        &mut self,
+        result_addr: u64,
+        _arg2: u64,
+        _arg3: u64,
+        _arg4: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        let invoke_context = question_mark!(
+            self.invoke_context
+                .try_borrow_mut()
+                .map_err(|_| SyscallError::InvokeContextBorrowFailed),
+            result
+        );
+
+        let loader_id = question_mark!(
+            invoke_context
+                .get_loader()
+                .map_err(SyscallError::InstructionError),
+            result
+        );
+
+        let value = question_mark!(
+            translate_slice_mut::<u8>(
+                memory_mapping,
+                result_addr,
+                8,
+                &loader_id,
+            ),
+            result
+        );
+
+        let compute_meter = invoke_context.get_compute_meter();
+        let compute_meter = compute_meter.try_borrow().unwrap();
+        let remaining = compute_meter.get_remaining();
+        value.copy_from_slice(&remaining.to_le_bytes());
         *result = Ok(0);
     }
 }
