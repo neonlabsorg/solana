@@ -331,7 +331,7 @@ pub fn check_for_tracer_packet(packet: &mut Packet) -> bool {
     // Check for tracer pubkey
     match packet.data(first_pubkey_start..first_pubkey_end) {
         Some(pubkey) if pubkey == TRACER_KEY.as_ref() => {
-            packet.meta.flags |= PacketFlags::TRACER_PACKET;
+            packet.meta.set_tracer(true);
             true
         }
         _ => false,
@@ -1491,7 +1491,7 @@ mod tests {
             let mut batches =
                 to_packet_batches(&(0..1000).map(|_| test_tx()).collect::<Vec<_>>(), 128);
             discard += filter.dedup_packets_and_count_discards(&mut batches, |_, _, _| ()) as usize;
-            debug!("{} {}", i, discard);
+            trace!("{} {}", i, discard);
             if filter.saturated.load(Ordering::Relaxed) {
                 break;
             }
@@ -1721,7 +1721,7 @@ mod tests {
             batches.iter_mut().enumerate().for_each(|(i, b)| {
                 b.iter_mut().enumerate().for_each(|(j, p)| {
                     if !p.meta.discard() {
-                        debug!("{} {}", i, j)
+                        trace!("{} {}", i, j)
                     }
                 })
             });

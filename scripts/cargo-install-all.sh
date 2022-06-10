@@ -9,7 +9,14 @@ if [[ $OSTYPE == darwin* ]]; then
   # Mac OS X's version of `readlink` does not support the -f option,
   # But `greadlink` does, which you can get with `brew install coreutils`
   readlink_cmd="greadlink"
+
+  if ! command -v ${readlink_cmd} &> /dev/null
+  then
+    echo "${readlink_cmd} could not be found. You may need to install coreutils: \`brew install coreutils\`"
+    exit 1
+  fi
 fi
+
 cargo="$("${readlink_cmd}" -f "${here}/../cargo")"
 
 set -e
@@ -72,7 +79,9 @@ if [[ $CI_OS_NAME = windows ]]; then
   # yet available on windows
   BINS=(
     cargo-build-bpf
+    cargo-build-sbf
     cargo-test-bpf
+    cargo-test-sbf
     solana
     solana-install
     solana-install-init
@@ -103,7 +112,9 @@ else
   if [[ -z "$validatorOnly" ]]; then
     BINS+=(
       cargo-build-bpf
+      cargo-build-sbf
       cargo-test-bpf
+      cargo-test-sbf
       solana-dos
       solana-install-init
       solana-stake-accounts
