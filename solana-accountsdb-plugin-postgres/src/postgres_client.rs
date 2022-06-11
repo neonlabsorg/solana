@@ -90,6 +90,7 @@ pub struct DbAccountInfo {
     pub data: Vec<u8>,
     pub slot: i64,
     pub write_version: i64,
+    pub txn_signature: Option<Vec<u8>>,
 }
 
 pub(crate) fn abort() -> ! {
@@ -117,6 +118,7 @@ impl DbAccountInfo {
             data,
             slot: slot as i64,
             write_version: account.write_version(),
+            txn_signature: account.txn_signature().map(|v| v.to_vec()),
         }
     }
 }
@@ -129,6 +131,7 @@ pub trait ReadableAccountInfo: Sized {
     fn rent_epoch(&self) -> i64;
     fn data(&self) -> &[u8];
     fn write_version(&self) -> i64;
+    fn txn_signature(&self) -> Option<&[u8]>;
 }
 
 impl ReadableAccountInfo for DbAccountInfo {
@@ -159,6 +162,10 @@ impl ReadableAccountInfo for DbAccountInfo {
     fn write_version(&self) -> i64 {
         self.write_version
     }
+
+    fn txn_signature(&self) -> Option<&[u8]> {
+        self.txn_signature.as_ref().map(|v| v.as_slice())
+    }
 }
 
 impl<'a> ReadableAccountInfo for ReplicaAccountInfoV2<'a> {
@@ -188,6 +195,10 @@ impl<'a> ReadableAccountInfo for ReplicaAccountInfoV2<'a> {
 
     fn write_version(&self) -> i64 {
         self.write_version as i64
+    }
+
+    fn txn_signature(&self) -> Option<&[u8]> {
+        self.txn_signature.map(|v| v.as_ref())
     }
 }
 
