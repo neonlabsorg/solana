@@ -434,8 +434,8 @@ impl SimplePostgresClient {
         client: &mut Client,
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
-        let stmt = "INSERT INTO account_audit (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
+        let stmt = "INSERT INTO account_audit (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on, txn_signature) \
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)";
 
         let stmt = client.prepare(stmt);
 
@@ -519,6 +519,7 @@ impl SimplePostgresClient {
                 &account.data(),
                 &account.write_version(),
                 &updated_on,
+                &account.txn_signature,
             ],
         );
 
