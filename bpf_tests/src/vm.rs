@@ -135,7 +135,7 @@ fn execute(
     let sysvar_cache = fill_sysvar_cache();
 
     let compute_budget = ComputeBudget {
-        max_units: 500_000_000_000,
+        max_units: 500_000,
         heap_size: Some(256_usize.saturating_mul(1024)),
         syscall_base_cost: 0,
         log_64_units: 0,

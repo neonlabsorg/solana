@@ -61,7 +61,8 @@ environmental::environmental!(listener: dyn EventListener + 'static);
 
 pub trait EventListener {
         // Handle an [Event]
-    fn event(&mut self, event: &[u8]);
+    // fn event(&mut self, event: &[u8]);
+    fn event(&mut self, event: u64, memory_mapping: &MemoryMapping, loader_id: &Pubkey);
 }
 
 pub(crate) fn with<F: FnOnce(&mut (dyn EventListener + 'static))>(f: F) {
@@ -166,6 +167,8 @@ pub fn register_syscalls(
     syscall_registry.register_syscall_by_name(b"sol_keccak256", SyscallKeccak256::call)?;
     syscall_registry.register_syscall_by_name(b"sol_send_trace_message", SyscallSendTraceMessage::call)?;
     syscall_registry.register_syscall_by_name(b"sol_compute_meter_remaining", SyscallComputeMeterRemaining::call)?;
+    syscall_registry.register_syscall_by_name(b"sol_compute_meter_set_remaining", SyscallComputeMeterSetRemaining::call)?;
+    syscall_registry.register_syscall_by_name(b"sol_cast", SyscallCast::call)?;
 
     if invoke_context
         .feature_set
@@ -362,8 +365,23 @@ pub fn bind_syscall_context_objects<'a, 'b>(
         }),
         None,
     )?;
+
     vm.bind_syscall_context_object(
         Box::new(SyscallComputeMeterRemaining {
+            invoke_context: invoke_context.clone(),
+        }),
+        None,
+    )?;
+
+    vm.bind_syscall_context_object(
+        Box::new(SyscallComputeMeterSetRemaining {
+            invoke_context: invoke_context.clone(),
+        }),
+        None,
+    )?;
+
+    vm.bind_syscall_context_object(
+        Box::new(SyscallCast {
             invoke_context: invoke_context.clone(),
         }),
         None,
@@ -580,7 +598,7 @@ fn translate_slice_mut<'a, T>(
 ) -> Result<&'a mut [T], EbpfError<BpfError>> {
     translate_slice_inner::<T>(memory_mapping, AccessType::Store, vm_addr, len, loader_id)
 }
-fn translate_slice<'a, T>(
+pub fn translate_slice<'a, T>(
     memory_mapping: &MemoryMapping,
     vm_addr: u64,
     len: u64,
@@ -1410,7 +1428,7 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallSendTraceMessage<'a, 'b> {
     fn call(
         &mut self,
         vals_addr: u64,
-        vals_len: u64,
+        _arg2: u64,
         _arg3: u64,
         _arg4: u64,
         _arg5: u64,
@@ -1430,18 +1448,20 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallSendTraceMessage<'a, 'b> {
                 .map_err(SyscallError::InstructionError),
             result
         );
-
-        if vals_len > 0 {
-            let vals = question_mark!(
-                translate_slice::<u8>(memory_mapping, vals_addr, vals_len, &loader_id),
-                result
-            );
-            with(|listener|{listener.event(vals)});
-        }
+        //
+        // if vals_len > 0 {
+        //     let vals = question_mark!(
+        //         translate_slice::<u8>(memory_mapping, vals_addr, vals_len, &loader_id),
+        //         result
+        //     );
+        //     with(|listener|{listener.event(vals)});
+        // }
+        with(|listener|{listener.event(vals_addr, memory_mapping, &loader_id)});
         *result = Ok(0);
     }
 }
 
+/// Get ComputeMeter.remaining
 pub struct SyscallComputeMeterRemaining<'a, 'b> {
     invoke_context: Rc<RefCell<&'a mut InvokeContext<'b>>>,
 }
@@ -1483,7 +1503,116 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallComputeMeterRemaining<'a, 'b> {
         let compute_meter = invoke_context.get_compute_meter();
         let compute_meter = compute_meter.try_borrow().unwrap();
         let remaining = compute_meter.get_remaining();
+        // println!("get remaining {}", remaining);
         value.copy_from_slice(&remaining.to_le_bytes());
+        *result = Ok(0);
+    }
+}
+
+/// Set ComputeMeter.remaining
+pub struct SyscallComputeMeterSetRemaining<'a, 'b> {
+    invoke_context: Rc<RefCell<&'a mut InvokeContext<'b>>>,
+}
+impl<'a, 'b> SyscallObject<BpfError> for SyscallComputeMeterSetRemaining<'a, 'b> {
+    fn call(
+        &mut self,
+        remaining: u64,
+        _arg2: u64,
+        _arg3: u64,
+        _arg4: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        // println!("set remaining {}", remaining);
+        let invoke_context = question_mark!(
+            self.invoke_context
+                .try_borrow_mut()
+                .map_err(|_| SyscallError::InvokeContextBorrowFailed),
+            result
+        );
+
+        let compute_meter = invoke_context.get_compute_meter();
+        let mut compute_meter = compute_meter.try_borrow_mut().unwrap();
+        compute_meter.mock_set_remaining(remaining);
+        *result = Ok(0);
+    }
+}
+
+#[derive(Debug,  Clone)]
+pub struct Item<'a> {
+    a: u8,
+    // b: Vec<u8>,
+    b: &'a [u8],
+}
+
+/// cast
+pub struct SyscallCast<'a, 'b> {
+    invoke_context: Rc<RefCell<&'a mut InvokeContext<'b>>>,
+}
+impl<'a, 'b> SyscallObject<BpfError> for SyscallCast<'a, 'b> {
+    fn call(
+        &mut self,
+        ptr: u64,
+        _arg2: u64,
+        _arg3: u64,
+        _arg4: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        println!("syscall cast ");
+        let invoke_context = question_mark!(
+            self.invoke_context
+                .try_borrow_mut()
+                .map_err(|_| SyscallError::InvokeContextBorrowFailed),
+            result
+        );
+
+
+        let loader_id = question_mark!(
+            invoke_context
+                .get_loader()
+                .map_err(SyscallError::InstructionError),
+            result
+        );
+
+        let value = question_mark!(
+            translate_slice::<u8>(
+                memory_mapping,
+                ptr,
+                size_of::<Item>() as u64,
+                &loader_id,
+            ),
+            result
+        );
+
+        let value = value  as *const _ as *const u8;
+
+        let ptr = value as *mut Item;
+        use std::mem::size_of;
+
+        unsafe {
+            let val: &[Item] = from_raw_parts_mut(ptr, size_of::<Item>());
+            // let val = &*ptr;
+            println!("{:?}", val[0].a);
+
+            let adr = val[0].b  as *const _ as *const u8;
+            let adr : u64 = adr as u64;
+
+            let value = question_mark!(
+
+                translate_slice::<u8>(
+                    memory_mapping,
+                    adr,
+                    3,
+                    &loader_id,
+                ),
+                result
+            );
+            println!("value {:?}", value);
+        }
+
         *result = Ok(0);
     }
 }
