@@ -1,4 +1,5 @@
 use evm::tracing::{EventOnStack, Event};
+use evm::U256;
 use solana_bpf_loader_program::syscalls as syscalls;
 use solana_rbpf::memory_region::MemoryMapping;
 use solana_sdk::pubkey::Pubkey;
@@ -48,10 +49,88 @@ impl syscalls::EventListener for Tracer{
             EventOnStack::TransactCall(trace) =>  println!(" transact_call " ),
             EventOnStack::TransactCreate(trace) =>  println!(" transact_create " ),
             EventOnStack::TransactCreate2(trace) =>  println!(" transact_crate2 " ),
-            EventOnStack::Step(trace) =>  println!(" step {:?}", trace.context ),
-            EventOnStack::StepResult(trace) =>  println!(" step_result " ),
+            EventOnStack::Step(trace) =>  {
+                println!(" step {:?}", trace.context );
+
+                if trace.memory.data_len > 0{
+                    let memory = syscalls::translate_slice::<u8>(
+                        memory_mapping,
+                        trace.memory.data,
+                        trace.memory.data_len as u64,
+                        loader_id,
+                    ).unwrap();
+                    println!(" step memory{:?}", memory );
+                }
+
+                if trace.stack.data_len > 0 {
+                    let stack = syscalls::translate_slice::<u8>(
+                        memory_mapping,
+                        trace.stack.data,
+                        trace.stack.data_len as u64 * 32,
+                        loader_id,
+                    ).unwrap();
+                    println!(" step stack {:?}", stack );
+                }
+                println!("step vec.len {}", trace.vec.len());
+
+                let vec = syscalls::translate_slice::<u8>(
+                    memory_mapping,
+                    trace.vec.as_slice() as *const _ as * const u8 as u64,
+                    trace.vec.len() as u64,
+                    loader_id,
+                ).unwrap();
+                println!("vector {:?}", vec);
+
+            },
+            EventOnStack::StepResult(trace) =>  {
+                if trace.return_value_len >0 {
+                    let return_value = syscalls::translate_slice::<u8>(
+                        memory_mapping,
+                        trace.return_value,
+                        trace.return_value_len as u64,
+                        loader_id,
+                    ).unwrap();
+                    println!(" step_result {:?}", return_value )
+                }
+
+                if trace.memory.data_len > 0{
+                    let memory = syscalls::translate_slice::<u8>(
+                        memory_mapping,
+                        trace.memory.data,
+                        trace.memory.data_len as u64,
+                        loader_id,
+                    ).unwrap();
+                    println!(" step memory{:?}", memory );
+                }
+
+                println!("sizeof U256 {}, trace.stack.data_len {}", size_of::<U256>(), trace.stack.data_len);
+                if trace.stack.data_len > 0 {
+                    let stack = syscalls::translate_slice::<u8>(
+                        memory_mapping,
+                        trace.stack.data,
+                        trace.stack.data_len as u64 *32,
+                        loader_id,
+                    ).unwrap();
+                    println!(" step stack {:?} ", stack);
+                }
+
+            },
+            EventOnStack::StepResult(trace) =>  {
+                if trace.return_value_len >0 {
+                    let return_value = syscalls::translate_slice::<u8>(
+                        memory_mapping,
+                        trace.return_value,
+                        trace.return_value_len as u64,
+                        loader_id,
+                    ).unwrap();
+                    println!(" step_result {:?}", return_value )
+                }
+            },
             EventOnStack::SLoad(trace) =>  println!(" ssload " ),
             EventOnStack::SStore(trace) =>  println!(" sstore " ),
+            // _ => {
+            //     println!("HRENNNNNNNNNNN  ")
+            // }
         }
         // println!("{:?}", value[0].);
         // let ptr = value[0] as * const EventOnStack;
