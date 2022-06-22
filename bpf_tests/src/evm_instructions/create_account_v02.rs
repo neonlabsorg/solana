@@ -19,7 +19,7 @@ use solana_sdk::{
         SanitizedMessage,
         Message,
     },
-
+    bpf_loader_upgradeable,
 };
 use solana_program_runtime::invoke_context::TransactionAccountRefCell;
 
@@ -33,15 +33,16 @@ use solana_sdk::account::WritableAccount;
 use crate::evm_instructions::{
     feature_set,
     bpf_loader_shared,
-    evm_loader_shared,
     system_shared,
-    evm_loader_str
+    evm_loader_str,
+    evm_loader_orig_str,
 };
 use std::collections::BTreeMap;
 
 
 pub fn process() -> Result<(), anyhow::Error> {
     let evm_contract = read_elf::read_so("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/evm_loader.so")?;
+    let evm_loader_bin = read_elf::read_bin("/home/user/CLionProjects/neonlabs/solana/bpf_tests/contracts/evm_loader_orig.bin")?;
 
     let evm_loader_key = Pubkey::from_str(&evm_loader_str)?;
 
@@ -52,14 +53,29 @@ pub fn process() -> Result<(), anyhow::Error> {
     let operator_key =  Pubkey::new_unique();
 
 
+    let evm_loader_orig_key = solana_sdk::pubkey::Pubkey::from_str(evm_loader_orig_str).unwrap();
+    let mut evm_loader_orig_shared = AccountSharedData::new(25_000_000_000, evm_loader_bin.len(), &bpf_loader_upgradeable::id());
+    let mut data= evm_loader_orig_shared.data_mut().as_mut_slice();
+    data.copy_from_slice(evm_loader_bin.as_slice());
+
+
+    let mut evm_loader_shared = AccountSharedData::new(1_000_000_000_000_000_000, 36, &bpf_loader_upgradeable::id());
+    evm_loader_shared.set_executable(true);
+    let mut data= evm_loader_shared.data_mut().as_mut_slice();
+
+    data[..4].copy_from_slice(vec![2, 0, 0, 0].as_slice());
+    data[4..].copy_from_slice(evm_loader_orig_key.to_bytes().as_slice());
+
+
     println!("new_acc: {}, {}", ether_address, new_account_key);
     println!("operator: {}", operator_key);
 
     let mut accounts = BTreeMap::from([
-        ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared())) ),
+        ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared)) ),
         ( operator_key, AccountSharedData::new_ref(1_000_000_000, 0, &system_program::id()) ),
         ( system_program::id(), Rc::new(RefCell::new(system_shared())) ),
         ( new_account_key, AccountSharedData::new_ref(0, 0, &system_program::id()) ),
+        ( evm_loader_orig_key, Rc::new(RefCell::new(evm_loader_orig_shared))),
     ]);
 
     let ix_data: Vec<u8>= serialize(&(24_u8, ether_address.as_fixed_bytes(), nonce)).unwrap();

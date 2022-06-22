@@ -740,6 +740,7 @@ dependencies = [
  "rlp",
  "serde",
  "serde_bytes",
+ "solana-program 1.9.12",
  "uint",
 ]
 

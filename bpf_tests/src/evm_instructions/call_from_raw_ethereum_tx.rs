@@ -41,7 +41,7 @@ use std::{
 use solana_sdk::account::{WritableAccount, ReadableAccount};
 use hex;
 
-use crate::evm_instructions::{feature_set, bpf_loader_shared, evm_loader_shared, system_shared, evm_loader_str, sysvar_shared, make_ethereum_transaction, evm_loader_orig_str};
+use crate::evm_instructions::{feature_set, bpf_loader_shared, system_shared, evm_loader_str, sysvar_shared, make_ethereum_transaction, evm_loader_orig_str};
 
 use evm_loader::{
     account::{
@@ -70,14 +70,6 @@ use std::path::PathBuf;
 
 
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
-
-// pub fn read_contract(file_name: &str)->std::io::Result<Vec<u8>> {
-//     let mut f = File::open(file_name)?;
-//     let mut bin = vec![];
-//     f.read_to_end(&mut bin)?;
-//     Ok(bin)
-// }
-
 
 
 pub fn account_info<'a>(key: &'a Pubkey, account: &'a mut Account) -> AccountInfo<'a> {

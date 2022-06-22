@@ -22,8 +22,6 @@ fn main(){
 
     solana_logger::setup();
 
-
-
     // if let Err(e) = create_account_v02::process(&opt) {
     //     eprintln!("error: {:#}", e);
     //     exit(1);
@@ -32,10 +30,17 @@ fn main(){
     let mut tracer = Tracer::new();
     syscalls::using(&mut tracer, ||{
 
+        // if let Err(e) = create_account_v02::process() {
+        //     eprintln!("error: {:#}", e);
+        //     exit(1);
+        // }
+
         if let Err(e) = call_from_raw_ethereum_tx::process() {
             eprintln!("error: {:#}", e);
             exit(1);
         }
     })
+
+
 
 }

@@ -37,7 +37,6 @@ use hex;
 use crate::evm_instructions::{
     feature_set,
     bpf_loader_shared,
-    evm_loader_shared,
     system_shared,
     evm_loader_str,
     sysvar_shared,

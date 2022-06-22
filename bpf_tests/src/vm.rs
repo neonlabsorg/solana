@@ -1,4 +1,4 @@
-use crate::evm_instructions::{evm_loader_str, evm_loader_shared, evm_loader_orig_str};
+use crate::evm_instructions::{evm_loader_str,  evm_loader_orig_str};
 
 use anyhow::{anyhow};
 use std::{
@@ -58,7 +58,6 @@ use solana_sdk::{
             construct_instructions_data},
     },
     system_program,
-
 };
 
 use solana_runtime::{
@@ -137,24 +136,12 @@ fn execute(
     let compute_budget = ComputeBudget {
         max_units: 500_000,
         heap_size: Some(256_usize.saturating_mul(1024)),
-        syscall_base_cost: 0,
-        log_64_units: 0,
-        invoke_units :0,
-        heap_cost: 0,
-        sysvar_base_cost: 0,
-        mem_op_base_cost:0,
-        secp256k1_recover_cost :0,
-        create_program_address_units :0,
-        sha256_base_cost:0,
-        sha256_byte_cost:0,
-        // cpi_bytes_per_unit:0,
         ..ComputeBudget::default()
     };
 
     let mut builtin_programs: BuiltinPrograms = BuiltinPrograms::default();
     let mut builtins = builtins::get();
     for builtin in builtins.genesis_builtins {
-        // println!("Adding program {} under {:?}", &builtin.name, &builtin.id);
         builtin_programs.vec.push(BuiltinProgram {
             program_id: builtin.id,
             process_instruction: builtin.process_instruction_with_context,
@@ -417,9 +404,9 @@ pub fn run(
     }
 
     println!("");
-    for i in accounts_ordered{
-        println!("{:?}", i);
-    }
+    // for i in accounts_ordered{
+    //     println!("{:?}", i);
+    // }
 
     Ok(())
 }

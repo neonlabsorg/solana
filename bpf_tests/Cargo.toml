@@ -30,8 +30,9 @@ hex = "0.4.2"
 
 #evm = { git = "https://github.com/neonlabsorg/neon-evm", branch = "688_syscall_tracer_api", default_features = false }
 #evm-loader = { git = "https://github.com/neonlabsorg/neon-evm", branch = "688_syscall_tracer_api", default_features = false }
-evm = {version = "=0.18.0", path = "/home/user/CLionProjects/neonlabs/neon-evm/evm_loader/rust-evm", default_features = false }
-evm-loader = {version = "=0.7.6-dev",  path = "/home/user/CLionProjects/neonlabs/neon-evm/evm_loader/program", default_features = false, features = ["tracing"] }
+evm = {version = "=0.18.0", path = "/home/user/CLionProjects/neonlabs/neon-evm/evm_loader/rust-evm", default_features = false, features = ["tracing"] }
+#evm-loader = {version = "=0.7.6-dev",  path = "/home/user/CLionProjects/neonlabs/neon-evm/evm_loader/program", default_features = false, features = ["tracing"] }
+evm-loader = {version = "=0.7.6-dev",  path = "/home/user/CLionProjects/neonlabs/neon-evm/evm_loader/program", default_features = false }
 rlp = "0.5"
 rand = "0.7.0"
 arrayref = "0.3.6"

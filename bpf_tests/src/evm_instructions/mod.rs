@@ -78,13 +78,6 @@ pub fn bpf_loader_shared() -> AccountSharedData {
     shared
 }
 
-pub fn evm_loader_shared() -> AccountSharedData {
-    // let mut shared = AccountSharedData::new(1_000_000_000_000_000_000, 36, &bpf_loader::id());
-    let mut shared = AccountSharedData::new(1_000_000_000_000_000_000, 36, &bpf_loader_upgradeable::id());
-    shared.set_executable(true);
-    shared
-}
-
 pub fn system_shared() -> AccountSharedData {
     let mut shared = AccountSharedData::new(1_000_000_000, 14, &native_loader::id());
     shared.set_executable(true);

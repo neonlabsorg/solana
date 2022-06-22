@@ -63,6 +63,8 @@ pub trait EventListener {
         // Handle an [Event]
     // fn event(&mut self, event: &[u8]);
     fn event(&mut self, event: u64, memory_mapping: &MemoryMapping, loader_id: &Pubkey);
+    fn save_bpf_units(&mut self, val: u64);
+    fn restore_bpf_units(&self) -> u64;
 }
 
 pub(crate) fn with<F: FnOnce(&mut (dyn EventListener + 'static))>(f: F) {
@@ -72,7 +74,6 @@ pub(crate) fn with<F: FnOnce(&mut (dyn EventListener + 'static))>(f: F) {
 pub fn using<R, F: FnOnce() -> R>(new: &mut (dyn EventListener + 'static), f: F) -> R {
     listener::using(new, f)
 }
-
 
 
 /// Maximum signers
@@ -590,7 +591,7 @@ fn translate_slice_inner<'a, T>(
     }
     Ok(unsafe { from_raw_parts_mut(host_addr as *mut T, len as usize) })
 }
-fn translate_slice_mut<'a, T>(
+pub fn translate_slice_mut<'a, T>(
     memory_mapping: &MemoryMapping,
     vm_addr: u64,
     len: u64,
@@ -1468,12 +1469,12 @@ pub struct SyscallComputeMeterRemaining<'a, 'b> {
 impl<'a, 'b> SyscallObject<BpfError> for SyscallComputeMeterRemaining<'a, 'b> {
     fn call(
         &mut self,
-        result_addr: u64,
+        _arg1: u64,
         _arg2: u64,
         _arg3: u64,
         _arg4: u64,
         _arg5: u64,
-        memory_mapping: &MemoryMapping,
+        _memory_mapping: &MemoryMapping,
         result: &mut Result<u64, EbpfError<BpfError>>,
     ) {
         let invoke_context = question_mark!(
@@ -1483,28 +1484,33 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallComputeMeterRemaining<'a, 'b> {
             result
         );
 
-        let loader_id = question_mark!(
-            invoke_context
-                .get_loader()
-                .map_err(SyscallError::InstructionError),
-            result
-        );
-
-        let value = question_mark!(
-            translate_slice_mut::<u8>(
-                memory_mapping,
-                result_addr,
-                8,
-                &loader_id,
-            ),
-            result
-        );
+        // let loader_id = question_mark!(
+        //     invoke_context
+        //         .get_loader()
+        //         .map_err(SyscallError::InstructionError),
+        //     result
+        // );
+        //
+        // let value = question_mark!(
+        //     translate_slice_mut::<u8>(
+        //         memory_mapping,
+        //         result_addr,
+        //         8,
+        //         &loader_id,
+        //     ),
+        //     result
+        // );
 
         let compute_meter = invoke_context.get_compute_meter();
         let compute_meter = compute_meter.try_borrow().unwrap();
         let remaining = compute_meter.get_remaining();
+        // remaining = remaining + 11_u64;
+
+        listener::with(|x| {x.save_bpf_units(remaining)});
+
+        // remaining_with(|counter| {*counter = remaining});
         // println!("get remaining {}", remaining);
-        value.copy_from_slice(&remaining.to_le_bytes());
+        // value.copy_from_slice(&remaining.to_le_bytes());
         *result = Ok(0);
     }
 }
@@ -1516,12 +1522,12 @@ pub struct SyscallComputeMeterSetRemaining<'a, 'b> {
 impl<'a, 'b> SyscallObject<BpfError> for SyscallComputeMeterSetRemaining<'a, 'b> {
     fn call(
         &mut self,
-        remaining: u64,
+        _arg1: u64,
         _arg2: u64,
         _arg3: u64,
         _arg4: u64,
         _arg5: u64,
-        memory_mapping: &MemoryMapping,
+        _memory_mapping: &MemoryMapping,
         result: &mut Result<u64, EbpfError<BpfError>>,
     ) {
         // println!("set remaining {}", remaining);
@@ -1532,9 +1538,31 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallComputeMeterSetRemaining<'a, 'b>
             result
         );
 
+
+        // let loader_id = question_mark!(
+        //     invoke_context
+        //         .get_loader()
+        //         .map_err(SyscallError::InstructionError),
+        //     result
+        // );
+
+        // let remaining = question_mark!(
+        //     translate_slice_mut::<u64>(
+        //         memory_mapping,
+        //         remaining,
+        //         1,
+        //         &loader_id,
+        //     ),
+        //     result
+        // );
+        //
+        // let val = remaining[0].clone();
+
+        let remaining = listener::with(|x| {x.restore_bpf_units()}).unwrap();
         let compute_meter = invoke_context.get_compute_meter();
         let mut compute_meter = compute_meter.try_borrow_mut().unwrap();
-        compute_meter.mock_set_remaining(remaining);
+
+        compute_meter.mock_set_remaining(remaining+1);
         *result = Ok(0);
     }
 }
