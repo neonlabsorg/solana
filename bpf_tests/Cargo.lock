@@ -760,7 +760,6 @@ dependencies = [
  "borsh",
  "evm-core",
  "sha3 0.8.2",
- "solana-program 1.9.12",
 ]
 
 [[package]]

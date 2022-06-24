@@ -1,15 +1,8 @@
-use evm_loader::{Event, *};
+use evm_loader::{Event};
 use evm_loader::{U256, Memory, Stack, Context, Transfer, ExitReason, Capture, Trap};
 use solana_bpf_loader_program::syscalls as syscalls;
 use solana_rbpf::memory_region::MemoryMapping;
 use solana_sdk::pubkey::Pubkey;
-use std::{
-    slice::from_raw_parts,
-    mem::size_of,
-};
-use std::ops::Deref;
-use std::borrow::BorrowMut;
-
 
 pub struct Tracer{}
 
@@ -41,7 +34,7 @@ pub fn read_vec<T>(vm_addr: &Vec<T>, memory_mapping: &MemoryMapping, loader_id: 
 }
 
 pub fn read_memory (vm_memory :&Memory, memory_mapping: &MemoryMapping, loader_id: &Pubkey) -> Memory {
-    let mut memory = &syscalls::translate_slice_mut::<Memory>(
+    let memory = &syscalls::translate_slice_mut::<Memory>(
         memory_mapping,
         vm_memory  as *const _ as * const u8 as u64,
         1,
@@ -60,7 +53,7 @@ pub fn read_memory (vm_memory :&Memory, memory_mapping: &MemoryMapping, loader_i
 
 
 pub fn read_stack (vm_stack :&Stack, memory_mapping: &MemoryMapping, loader_id: &Pubkey) -> Stack {
-    let mut stack = &syscalls::translate_slice_mut::<Stack>(
+    let stack = &syscalls::translate_slice_mut::<Stack>(
         memory_mapping,
         vm_stack  as *const _ as * const u8 as u64,
         1,

@@ -1,27 +1,19 @@
-#[deny(warnings)]
-
 mod read_elf;
 mod vm;
 mod evm_instructions;
 mod tracing;
 
-use std::{
-    env,
-    process::{exit},
-};
-use structopt::StructOpt;
+use std::process::exit;
 
+#[allow(unused_imports)]
 use evm_instructions::{
     create_account_v02,
     call_from_raw_ethereum_tx,
-    keccak_secp256k1,
 };
-
 use tracing::Tracer;
 use solana_bpf_loader_program::syscalls as syscalls;
 
 fn main(){
-
     solana_logger::setup();
 
     let mut tracer = Tracer::new();
@@ -37,7 +29,4 @@ fn main(){
             exit(1);
         }
     })
-
-
-
 }

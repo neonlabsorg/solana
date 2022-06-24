@@ -2,51 +2,20 @@ pub mod create_account_v02;
 pub mod call_from_raw_ethereum_tx;
 pub mod keccak_secp256k1;
 
-use std::sync::Arc;
-
 use solana_sdk::{
     feature_set::{
         FeatureSet,
         tx_wide_compute_cap,
         requestable_heap_size,
-        remove_native_loader,
-        prevent_calling_precompiles_as_programs,
+        // prevent_calling_precompiles_as_programs,
         // demote_program_write_locks,
     },
-    account::AccountSharedData,
-    bpf_loader,
-    native_loader,
-    system_program,
-    sysvar::instructions,
-    bpf_loader_upgradeable,
 };
-use solana_program:: {
-    pubkey::Pubkey,
-    keccak::hash,
-};
-
-use evm_loader::{H160, U256};
-
-use evm_loader::{
-    account::{
-        ether_account,
-        ether_contract,
-        Packable,
-        AccountData,
-    },
-    config::{
-        collateral_pool_base,
-        CHAIN_ID,
-        AUTHORIZED_OPERATOR_LIST,
-    },
-
-};
-
-use libsecp256k1::{SecretKey, Signature};
-
+use solana_program::keccak::hash;
+use evm_loader::{H160, U256, config::CHAIN_ID};
+use libsecp256k1::SecretKey;
 use rlp::RlpStream;
-
-use solana_sdk::account::WritableAccount;
+use std::sync::Arc;
 
 
 struct UnsignedTransaction {
@@ -60,8 +29,8 @@ struct UnsignedTransaction {
 }
 
 
-pub const evm_loader_str :&str = "eeLSJgWzzxrqKv1UxtRVVH8FX3qCQWUs9QuAjJpETGU";
-pub const evm_loader_orig_str :&str = "31QHZZ2azAyK7NsGUdw3kxhG9AJaiQ1ExUvcJiMEQ8k9";
+pub const EVM_LOADER_STR :&str = "eeLSJgWzzxrqKv1UxtRVVH8FX3qCQWUs9QuAjJpETGU";
+pub const EVM_LOADER_ORIG_STR :&str = "31QHZZ2azAyK7NsGUdw3kxhG9AJaiQ1ExUvcJiMEQ8k9";
 
 pub fn feature_set() -> Arc<FeatureSet> {
     let mut features = FeatureSet::all_enabled();
@@ -123,7 +92,6 @@ pub fn make_ethereum_transaction(
     };
 
     let (r_s, v) = {
-        use libsecp256k1::{Message, sign};
         let msg = libsecp256k1::Message::parse(&keccak256(rlp_data.as_slice()));
         libsecp256k1::sign(&msg, &pk)
     };

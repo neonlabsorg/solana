@@ -1,4 +1,3 @@
-
 use regex::Regex;
 use anyhow::{anyhow, Context};
 use std::{
@@ -9,7 +8,6 @@ use std::{
     fs,
 
 };
-
 
 // Start a new process running the program and capturing its output.
 fn spawn<I, S>(program: &Path, args: I) -> Result<(String, String), anyhow::Error>

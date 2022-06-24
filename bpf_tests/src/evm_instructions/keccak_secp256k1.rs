@@ -1,62 +1,9 @@
-use crate::read_elf;
-use crate::vm;
-use evm_loader::{H160, U256, account::ACCOUNT_SEED_VERSION};
+use crate::evm_instructions::make_ethereum_transaction;
+use evm_loader::H160;
 
-use solana_sdk::{
-    account::{AccountSharedData,  Account},
-    instruction::{Instruction, AccountMeta},
-    bpf_loader,
-    native_loader,
-    system_program,
-    sysvar::instructions,
-};
-
-use solana_program:: {
-    pubkey::Pubkey,
-    keccak::hash,
-    account_info::AccountInfo
-};
-
-use std::{
-    str::FromStr,
-    cell::RefCell,
-    rc::Rc,
-    fs::File,
-    io::prelude::*,
-    collections::BTreeMap,
-};
-
-use solana_sdk::account::{WritableAccount, ReadableAccount};
-use hex;
-
-use crate::evm_instructions::{
-    feature_set,
-    evm_loader_str,
-    make_ethereum_transaction,
-};
-
-use evm_loader::{
-    account::{
-        ether_account,
-        ether_contract,
-        Packable,
-        AccountData,
-    },
-    config::{
-        collateral_pool_base,
-        CHAIN_ID,
-        AUTHORIZED_OPERATOR_LIST,
-    },
-
-};
-
-use libsecp256k1::{SecretKey, Signature};
-use libsecp256k1::PublicKey;
-
-use rlp::RlpStream;
-use std::borrow::Borrow;
-use std::ops::{Deref, DerefMut};
-use std::cell::RefMut;
+use solana_sdk::instruction::{Instruction, AccountMeta};
+use solana_program::{pubkey::Pubkey};
+use std::str::FromStr;
 
 
 fn make_keccak_instruction_data(instruction_index : u8, msg_len: u16, data_start : u16) ->Vec<u8> {
@@ -92,7 +39,7 @@ fn make_keccak_instruction_data(instruction_index : u8, msg_len: u16, data_start
 }
 
 
-pub fn make_keccak_instruction(contract_address : &H160,) -> Result<(Instruction), anyhow::Error> {
+pub fn make_keccak_instruction(contract_address : &H160,) -> Result<Instruction, anyhow::Error> {
 
     let keccakprog = Pubkey::from_str("KeccakSecp256k11111111111111111111111111111").unwrap();
 

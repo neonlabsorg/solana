@@ -1,4 +1,4 @@
-use crate::evm_instructions::{evm_loader_str,  evm_loader_orig_str};
+use crate::evm_instructions::{EVM_LOADER_STR,  EVM_LOADER_ORIG_STR};
 
 use anyhow::{anyhow};
 use std::{
@@ -9,6 +9,7 @@ use std::{
     time::Instant,
     borrow::Cow,
     str::FromStr,
+    collections::BTreeMap,
 };
 
 use solana_bpf_loader_program::{
@@ -19,9 +20,7 @@ use solana_bpf_loader_program::{
 use solana_program_runtime::{
     compute_budget::ComputeBudget,
     invoke_context::{
-        prepare_mock_invoke_context,
         InvokeContext,
-        ComputeMeter,
         BuiltinProgram,
         Executors,
         TransactionAccountRefCell,
@@ -29,11 +28,12 @@ use solana_program_runtime::{
     log_collector::LogCollector,
     sysvar_cache::SysvarCache,
     stable_log,
-    timings::ExecuteTimings,
 };
 use solana_rbpf::{elf::Executable, vm::Config};
+#[allow(deprecated)]
+#[allow(unused_imports)]
 use solana_sdk::{
-    account::{AccountSharedData, Account}, bpf_loader, entrypoint::SUCCESS,
+    account::{AccountSharedData, Account},  entrypoint::SUCCESS,
     feature_set::{FeatureSet, instructions_sysvar_owned_by_sysvar},
     hash::Hash,
     pubkey::Pubkey,
@@ -43,16 +43,10 @@ use solana_sdk::{
     epoch_schedule::EpochSchedule,
     sysvar,
     slot_hashes::SlotHashes,
-    keyed_account::keyed_account_at_index,
-    native_loader,
     message::{
         SanitizedMessage,
-        Message,
     },
     secp256k1_program,
-    secp256k1_instruction::new_secp256k1_instruction,
-    instruction::InstructionError,
-    instruction::Instruction,
     sysvar::{
         instructions::{
             construct_instructions_data},
@@ -63,27 +57,15 @@ use solana_sdk::{
 use solana_runtime::{
     builtins,
     bank::BuiltinPrograms,
-    message_processor::MessageProcessor,
-
 };
-use std::borrow::Borrow;
-use std::{ fmt::Debug, pin::Pin};
-
 
 use solana_sdk::{
     feature_set::do_support_realloc,
     transaction::{TransactionError},
     precompiles::verify_if_precompile,
     sysvar::instructions,
+    account::WritableAccount,
 };
-use std::fs::File;
-use std::io::BufWriter;
-use std::ops::{Deref, Index};
-
-use libsecp256k1::{SecretKey, Signature};
-use libsecp256k1::PublicKey;
-use solana_sdk::account::{WritableAccount, ReadableAccount};
-use std::collections::BTreeMap;
 
 
 fn fill_sysvar_cache() -> SysvarCache {
@@ -140,7 +122,7 @@ fn execute(
     };
 
     let mut builtin_programs: BuiltinPrograms = BuiltinPrograms::default();
-    let mut builtins = builtins::get();
+    let builtins = builtins::get();
     for builtin in builtins.genesis_builtins {
         builtin_programs.vec.push(BuiltinProgram {
             program_id: builtin.id,
@@ -182,7 +164,6 @@ fn execute(
                 mut_account_ref.data_as_mut_slice(),
                 instruction_index as u16,
             );
-            // println!("it is the sysvar account! ");
             break;
         }
     }
@@ -261,7 +242,7 @@ fn execute(
         invoke_context_mut
             .feature_set
             .is_active(&do_support_realloc::id()),
-    );
+    ).unwrap();
 
 
     let  return_data = &invoke_context.return_data.1;
@@ -282,6 +263,7 @@ fn execute(
 
 
 /// Verify the precompiled programs in this transaction.
+#[allow(unused)]
 pub fn verify_precompiles(message: &SanitizedMessage, feature_set: &Arc<FeatureSet>) -> Result<(), TransactionError> {
     for instruction in message.instructions() {
         // The Transaction may not be sanitized at this point
@@ -331,23 +313,19 @@ pub fn run(
     // secp256k1_program
     // verify_precompiles(message, features).map_err(|e| anyhow!("precompile instruction error: {:?}", e )).unwrap();
 
-    // println!("verify_precompiles is completed");
-
     let is_active = features.is_active(&instructions_sysvar_owned_by_sysvar::id());
 
-    for (i, key) in message.account_keys_iter().enumerate() {
+    for  key in message.account_keys_iter() {
         if solana_sdk::sysvar::instructions::check_id(key) {
             let sysvar_shared = construct_instructions_account(
                 message,
                 is_active
             );
-
             accounts.insert(
                 sysvar::instructions::id(), Rc::new(RefCell::new(sysvar_shared))
             );
         }
     }
-
 
     let mut accounts_ordered :Vec<TransactionAccountRefCell> = Vec::new();
 
@@ -356,12 +334,12 @@ pub fn run(
         accounts_ordered.push(value );
     }
 
-    let evm_loader_orig_key = solana_sdk::pubkey::Pubkey::from_str(evm_loader_orig_str).unwrap();
+    let evm_loader_orig_key = solana_sdk::pubkey::Pubkey::from_str(EVM_LOADER_ORIG_STR).unwrap();
     let value : TransactionAccountRefCell = (evm_loader_orig_key, accounts.get(&evm_loader_orig_key).unwrap().clone() );
     accounts_ordered.push(value );
 
 
-    let evm_loader_key = Pubkey::from_str(&evm_loader_str)?;
+    let evm_loader_key = Pubkey::from_str(&EVM_LOADER_STR)?;
 
     let program_index = accounts_ordered.iter().position(|item|item.0 == evm_loader_key ).unwrap();
 
@@ -402,12 +380,6 @@ pub fn run(
             println!("");
         }
     }
-
-    println!("");
-    // for i in accounts_ordered{
-    //     println!("{:?}", i);
-    // }
-
     Ok(())
 }
 
