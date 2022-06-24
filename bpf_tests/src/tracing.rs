@@ -1,5 +1,5 @@
-use evm::{Event, *};
-use evm::{U256, Memory, Stack, Context, Transfer, ExitReason, Capture, Trap};
+use evm_loader::{Event, *};
+use evm_loader::{U256, Memory, Stack, Context, Transfer, ExitReason, Capture, Trap};
 use solana_bpf_loader_program::syscalls as syscalls;
 use solana_rbpf::memory_region::MemoryMapping;
 use solana_sdk::pubkey::Pubkey;
@@ -11,17 +11,11 @@ use std::ops::Deref;
 use std::borrow::BorrowMut;
 
 
-pub struct Tracer{
-    // events: Vec<Event<'a>>,
-    pub remaining: u64,
-}
+pub struct Tracer{}
 
 impl Tracer  {
     pub fn new() -> Self {
-        Tracer {
-            // events: vec![],
-            remaining: 0,
-        }
+        Tracer {}
     }
 }
 
@@ -80,20 +74,11 @@ pub fn read_stack (vm_stack :&Stack, memory_mapping: &MemoryMapping, loader_id: 
         loader_id,
     ).unwrap();
 
-    Stack::from(data, stack.limit())
+    Stack::from(data,stack.limit())
 }
 
 
 impl syscalls::EventListener for Tracer{
-    fn save_bpf_units(&mut self, val: u64) {
-        self.remaining = val;
-        println!(" save remaining {}", val);
-    }
-
-    fn restore_bpf_units(&self) -> u64 {
-        println!(" restore remaining {}", self.remaining);
-        self.remaining
-    }
 
     fn event(&mut self, vm_addr: u64, memory_mapping: &MemoryMapping, loader_id: &Pubkey ){
 

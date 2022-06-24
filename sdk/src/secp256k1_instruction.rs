@@ -105,7 +105,6 @@ pub fn verify(
     instruction_datas: &[&[u8]],
     feature_set: &Arc<FeatureSet>,
 ) -> Result<(), PrecompileError> {
-    println!("verify");
     if data.is_empty() {
         return Err(PrecompileError::InvalidInstructionDataSize);
     }

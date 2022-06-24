@@ -8,7 +8,6 @@ use crate::{
 /// - RefCell checking can be compute unit expensive, to avoid that expense use
 ///   `invoke_unchecked` instead, but at your own risk.
 pub fn invoke(instruction: &Instruction, account_infos: &[AccountInfo]) -> ProgramResult {
-    println!("invoke () !! ");
     invoke_signed(instruction, account_infos, &[])
 }
 
@@ -33,7 +32,6 @@ pub fn invoke_signed(
     signers_seeds: &[&[&[u8]]],
 ) -> ProgramResult {
     // Check that the account RefCells are consistent with the request
-    println!("invoke_signed () !! ");
     for account_meta in instruction.accounts.iter() {
         for account_info in account_infos.iter() {
             if account_meta.pubkey == *account_info.key {

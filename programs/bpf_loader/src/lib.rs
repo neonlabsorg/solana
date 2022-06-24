@@ -142,7 +142,6 @@ pub fn create_executor(
         let programdata = keyed_account_at_index(keyed_accounts, programdata_account_index)?;
         create_executor_metrics.program_id = programdata.unsigned_key().to_string();
         let mut load_elf_time = Measure::start("load_elf_time");
-        println!("PARSE");
         let executable = Executable::<BpfError, ThisInstructionMeter>::from_elf(
             &programdata.try_account_ref()?.data()[programdata_offset..],
             None,
@@ -235,7 +234,6 @@ pub fn create_vm<'a, 'b>(
             .borrow_mut()
             .consume((heap_size as u64 / (32 * 1024)).saturating_sub(1) * compute_budget.heap_cost);
     }
-
     let mut heap =
         AlignedMemory::new_with_size(compute_budget.heap_size.unwrap_or(HEAP_LENGTH), HOST_ALIGN);
     let mut vm = EbpfVm::new(program, heap.as_slice_mut(), parameter_bytes)?;
@@ -275,14 +273,11 @@ fn process_instruction_common(
     invoke_context: &mut InvokeContext,
     use_jit: bool,
 ) -> Result<(), InstructionError> {
-    println!("process_instruction_common");
     let log_collector = invoke_context.get_log_collector();
     let program_id = invoke_context.get_caller()?;
 
     let keyed_accounts = invoke_context.get_keyed_accounts()?;
     let first_account = keyed_account_at_index(keyed_accounts, first_instruction_account)?;
-    println!("first_account {:?}", &first_account);
-    println!("program_id {:?}", &program_id);
     let second_account = keyed_account_at_index(keyed_accounts, first_instruction_account + 1);
     let (program, next_first_instruction_account) = if first_account.unsigned_key() == program_id {
         (first_account, first_instruction_account)
@@ -299,8 +294,6 @@ fn process_instruction_common(
         }
         (first_account, first_instruction_account)
     };
-
-    println!("program {:?}", &program);
 
     if program.executable()? {
         debug_assert_eq!(
@@ -1066,12 +1059,8 @@ impl Executor for BpfExecutor {
                 invoke_context,
                 &account_lengths,
             ) {
-                Ok(info) => {
-                    println!("create vm ok");
-                    info
-                },
+                Ok(info) => info,
                 Err(e) => {
-                    println!("create vm error");
                     ic_logger_msg!(log_collector, "Failed to create BPF VM: {}", e);
                     return Err(InstructionError::ProgramEnvironmentSetupFailure);
                 }
@@ -1082,13 +1071,11 @@ impl Executor for BpfExecutor {
             stable_log::program_invoke(&log_collector, &program_id, stack_height);
             let mut instruction_meter = ThisInstructionMeter::new(compute_meter.clone());
             let before = compute_meter.borrow().get_remaining();
-            println!("vm will execute");
             let result = if use_jit {
                 vm.execute_program_jit(&mut instruction_meter)
             } else {
                 vm.execute_program_interpreted(&mut instruction_meter)
             };
-            println!("vm executed");
             let after = compute_meter.borrow().get_remaining();
             ic_logger_msg!(
                 log_collector,
@@ -1097,13 +1084,13 @@ impl Executor for BpfExecutor {
                 before - after,
                 before
             );
-            // if log_enabled!(Trace) {
+            if log_enabled!(Trace) {
                 let mut trace_buffer = Vec::<u8>::new();
                 let analysis = Analysis::from_executable(&self.executable);
                 vm.get_tracer().write(&mut trace_buffer, &analysis).unwrap();
                 let trace_string = String::from_utf8(trace_buffer).unwrap();
-                println!("BPF Program Instruction Trace:\n{}", trace_string);
-            // }
+                trace!("BPF Program Instruction Trace:\n{}", trace_string);
+            }
             drop(vm);
             let (_returned_from_program_id, return_data) = &invoke_context.return_data;
             if !return_data.is_empty() {

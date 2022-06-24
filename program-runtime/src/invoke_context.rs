@@ -194,7 +194,7 @@ impl<'a> StackFrame<'a> {
 pub struct InvokeContext<'a> {
     invoke_stack: Vec<StackFrame<'a>>,
     rent: Rent,
-    pub pre_accounts: Vec<PreAccount>,
+    pre_accounts: Vec<PreAccount>,
     accounts: &'a [TransactionAccountRefCell],
     builtin_programs: &'a [BuiltinProgram],
     pub sysvar_cache: Cow<'a, SysvarCache>,
@@ -314,13 +314,6 @@ impl<'a> InvokeContext<'a> {
 
             self.pre_accounts = Vec::with_capacity(instruction.accounts.len());
             let mut work = |_unique_index: usize, account_index: usize| {
-
-                let account_index = if account_indices.is_empty() {
-                    account_index
-                } else {
-                    account_indices[account_index]
-                };
-
                 if account_index < self.accounts.len() {
                     let account = self.accounts[account_index].1.borrow();
                     self.pre_accounts
@@ -583,9 +576,6 @@ impl<'a> InvokeContext<'a> {
         self.record_instruction(self.get_stack_height(), instruction);
 
         let message = SanitizedMessage::Legacy(message);
-
-        println!("PROCESS_INSTRUCTION()");
-
         self.process_instruction(
             &message,
             &message.instructions()[0],
@@ -722,7 +712,6 @@ impl<'a> InvokeContext<'a> {
                 return Err(InstructionError::MissingAccount);
             }
         }
-        println!( "OKKKKKKKKK");
         program_indices.push(program_account_index);
 
         Ok((message, caller_write_privileges, program_indices))
@@ -738,7 +727,6 @@ impl<'a> InvokeContext<'a> {
         caller_write_privileges: &[bool],
         timings: &mut ExecuteTimings,
     ) -> ProcessInstructionResult {
-        println!("process_instruction !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ");
         let is_lowest_invocation_level = self.invoke_stack.is_empty();
         if !is_lowest_invocation_level {
             // Verify the calling program hasn't misbehaved
@@ -770,7 +758,6 @@ impl<'a> InvokeContext<'a> {
                 let program_id = message
                     .get_account_key(instruction.program_id_index as usize)
                     .expect("invalid program id index");
-                println!("invoke_context::process_instruction() program_id : {}" , program_id);
                 self.return_data = (*program_id, Vec::new());
                 let pre_remaining_units = self.compute_meter.borrow().get_remaining();
                 let execution_result = self.process_executable_chain(&instruction.data);
@@ -845,13 +832,9 @@ impl<'a> InvokeContext<'a> {
                 return native_loader.process_instruction(0, instruction_data, self);
             }
         } else {
-            for i in self.builtin_programs{
-                println!("builtins: {:?}", i.program_id);
-            }
             for entry in self.builtin_programs {
                 if entry.program_id == *owner_id {
                     // Call the program via a builtin loader
-                    println!("process_instruction #");
                     return (entry.process_instruction)(
                         0, // no root_id was provided
                         instruction_data,
@@ -860,7 +843,6 @@ impl<'a> InvokeContext<'a> {
                 }
             }
         }
-        println!("UnsupportedProgramId");
         Err(InstructionError::UnsupportedProgramId)
     }
 

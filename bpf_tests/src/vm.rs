@@ -134,7 +134,7 @@ fn execute(
     let sysvar_cache = fill_sysvar_cache();
 
     let compute_budget = ComputeBudget {
-        max_units: 500_000,
+        max_units: 1_000_000_000_000_000,
         heap_size: Some(256_usize.saturating_mul(1024)),
         ..ComputeBudget::default()
     };

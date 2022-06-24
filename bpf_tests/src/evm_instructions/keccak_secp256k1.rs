@@ -1,16 +1,10 @@
 use crate::read_elf;
 use crate::vm;
-use bincode::serialize;
-
-use evm::{H160, U256};
-use evm_loader::account::ACCOUNT_SEED_VERSION;
-
-use solana_program::account_info::AccountInfo;
+use evm_loader::{H160, U256, account::ACCOUNT_SEED_VERSION};
 
 use solana_sdk::{
     account::{AccountSharedData,  Account},
     instruction::{Instruction, AccountMeta},
-    // account_info::AccountInfo,
     bpf_loader,
     native_loader,
     system_program,
@@ -20,6 +14,7 @@ use solana_sdk::{
 use solana_program:: {
     pubkey::Pubkey,
     keccak::hash,
+    account_info::AccountInfo
 };
 
 use std::{
@@ -36,10 +31,7 @@ use hex;
 
 use crate::evm_instructions::{
     feature_set,
-    bpf_loader_shared,
-    system_shared,
     evm_loader_str,
-    sysvar_shared,
     make_ethereum_transaction,
 };
 

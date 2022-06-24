@@ -3,7 +3,7 @@ use crate::read_elf;
 use crate::vm;
 use bincode::serialize;
 
-use evm::{H160};
+use evm_loader::{H160};
 use evm_loader::account::ACCOUNT_SEED_VERSION;
 
 
@@ -32,8 +32,6 @@ use solana_sdk::account::WritableAccount;
 
 use crate::evm_instructions::{
     feature_set,
-    bpf_loader_shared,
-    system_shared,
     evm_loader_str,
     evm_loader_orig_str,
 };
@@ -66,6 +64,8 @@ pub fn process() -> Result<(), anyhow::Error> {
     data[..4].copy_from_slice(vec![2, 0, 0, 0].as_slice());
     data[4..].copy_from_slice(evm_loader_orig_key.to_bytes().as_slice());
 
+    let mut system_shared = AccountSharedData::new(1_000_000_000, 14, &native_loader::id());
+    system_shared.set_executable(true);
 
     println!("new_acc: {}, {}", ether_address, new_account_key);
     println!("operator: {}", operator_key);
@@ -73,7 +73,7 @@ pub fn process() -> Result<(), anyhow::Error> {
     let mut accounts = BTreeMap::from([
         ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared)) ),
         ( operator_key, AccountSharedData::new_ref(1_000_000_000, 0, &system_program::id()) ),
-        ( system_program::id(), Rc::new(RefCell::new(system_shared())) ),
+        ( system_program::id(), Rc::new(RefCell::new(system_shared)) ),
         ( new_account_key, AccountSharedData::new_ref(0, 0, &system_program::id()) ),
         ( evm_loader_orig_key, Rc::new(RefCell::new(evm_loader_orig_shared))),
     ]);

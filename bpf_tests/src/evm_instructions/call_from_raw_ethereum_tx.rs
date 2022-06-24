@@ -3,9 +3,8 @@ use crate::read_elf;
 use crate::vm;
 use bincode::serialize;
 
-use evm::{H160, U256};
+use evm_loader::{H160, U256};
 use evm_loader::account::ACCOUNT_SEED_VERSION;
-use evm_loader::hamt;
 
 use solana_program::account_info::AccountInfo;
 
@@ -41,7 +40,7 @@ use std::{
 use solana_sdk::account::{WritableAccount, ReadableAccount};
 use hex;
 
-use crate::evm_instructions::{feature_set, bpf_loader_shared, system_shared, evm_loader_str, sysvar_shared, make_ethereum_transaction, evm_loader_orig_str};
+use crate::evm_instructions::{feature_set,  evm_loader_str,  make_ethereum_transaction, evm_loader_orig_str};
 
 use evm_loader::{
     account::{
@@ -65,7 +64,7 @@ use rlp::RlpStream;
 use std::borrow::Borrow;
 use std::ops::{Deref, DerefMut};
 use std::cell::RefMut;
-use evm::Valids;
+use evm_loader::Valids;
 use std::path::PathBuf;
 
 
@@ -109,7 +108,6 @@ pub fn process() -> Result<(), anyhow::Error> {
         address : caller_address,
         bump_seed: caller_key_nonce,
         trx_count: 0,
-        // balance: U256::from(1_000_000_000_000_000_000_u64),
         balance: U256::from(1_000_000_000_u64),
         code_account: None,
         rw_blocked:  false,
@@ -146,39 +144,10 @@ pub fn process() -> Result<(), anyhow::Error> {
     let owner = array_mut_ref![hello_world_bin, 1, 32];
     owner.copy_from_slice(&contract_key.to_bytes()) ;
 
-    // let mut val = ether_contract::Data::unpack(&hello_world_bin[1..]);
-
-    // let code = ether_contract::Data{
-    //     owner: evm_loader::solana_program::pubkey::Pubkey::new_from_array(contract_key.to_bytes()),
-    //     code_size: val.code_size
-    // };
-    //
-    // let code_size = code.code_size as usize;
-    // let valids_size = (code_size / 8) + 1;
-    //
-    let mut code_shared = AccountSharedData::new(1_000_000_000_000_000_000,
-                                                 0, &evm_loader_key);
-
+    let mut code_shared = AccountSharedData::new(1_000_000_000_000_000_000,   0, &evm_loader_key);
     code_shared.set_data(hello_world_bin);
-    // let (tag, rest) = code_shared.data_mut().split_first_mut().expect("error");
-    // let (data,  rest) = rest.split_at_mut(ether_contract::Data::SIZE);
-    // let (contract_code,  rest) = rest.split_at_mut(code_size);
-    // let (mut valids,  storage) = rest.split_at_mut(valids_size);
-    //
-    // *tag = 2;   // TAG_CONTRACT
-
-    // code.pack(data);
-
-    // let start = 1 + ether_contract::Data::SIZE;
-    // let a = &hello_world_bin[start..start+code_size];
-    // contract_code[..code_size].copy_from_slice(&a[..]);
-
-    // let values = Valids::compute(contract_code);
-    // valids[..values.len()].copy_from_slice(values.as_slice());
-
 
     let token_key = Pubkey::new_from_array(spl_token::id().to_bytes());
-
     let keccak_key = Pubkey::from_str("KeccakSecp256k11111111111111111111111111111").unwrap();
 
 
@@ -201,10 +170,12 @@ pub fn process() -> Result<(), anyhow::Error> {
     data[4..].copy_from_slice(evm_loader_orig_key.to_bytes().as_slice());
 
 
+    let mut system_shared = AccountSharedData::new(1_000_000_000, 14, &native_loader::id());
+    system_shared.set_executable(true);
+
+
     let mut accounts = BTreeMap::from([
-        // ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared())) ),
         ( evm_loader_key, Rc::new(RefCell::new(evm_loader_shared.clone())) ),
-        // (instructions::id(), Rc::new(RefCell::new(sysvar_shared()))),
 
         (operator_key, AccountSharedData::new_ref(1_000_000_000_000_000_000, 0, &system_program::id())),
 
@@ -212,9 +183,8 @@ pub fn process() -> Result<(), anyhow::Error> {
 
         (caller_key, Rc::new(RefCell::new(caller_shared))),
 
-        (system_program::id(), Rc::new(RefCell::new(system_shared()))),
+        (system_program::id(), Rc::new(RefCell::new(system_shared))),
 
-        // (evm_loader_key, Rc::new(RefCell::new(evm_loader_shared()))),
         (evm_loader_key, Rc::new(RefCell::new(evm_loader_shared))),
 
         (contract_key, Rc::new(RefCell::new(contract_shared))),
@@ -248,7 +218,6 @@ pub fn process() -> Result<(), anyhow::Error> {
 
 
     let (sig, msg) = make_ethereum_transaction(caller.trx_count, &contract.address);
-    // let (sig, msg) = make_ethereum_transaction(caller.trx_count, &caller.address);
     let mut ix_data:Vec<u8> = Vec::new();
     ix_data.push(5_u8);
     ix_data.extend_from_slice(&treasury_index.to_le_bytes());

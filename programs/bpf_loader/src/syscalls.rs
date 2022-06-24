@@ -52,7 +52,6 @@ use {
         slice::from_raw_parts_mut,
         str::{from_utf8, Utf8Error},
         sync::Arc,
-        str::FromStr,
     },
     thiserror::Error as ThisError,
 };
@@ -60,11 +59,7 @@ use {
 environmental::environmental!(listener: dyn EventListener + 'static);
 
 pub trait EventListener {
-        // Handle an [Event]
-    // fn event(&mut self, event: &[u8]);
     fn event(&mut self, event: u64, memory_mapping: &MemoryMapping, loader_id: &Pubkey);
-    fn save_bpf_units(&mut self, val: u64);
-    fn restore_bpf_units(&self) -> u64;
 }
 
 pub(crate) fn with<F: FnOnce(&mut (dyn EventListener + 'static))>(f: F) {
@@ -167,10 +162,7 @@ pub fn register_syscalls(
     syscall_registry.register_syscall_by_name(b"sol_sha256", SyscallSha256::call)?;
     syscall_registry.register_syscall_by_name(b"sol_keccak256", SyscallKeccak256::call)?;
     syscall_registry.register_syscall_by_name(b"sol_send_trace_message", SyscallSendTraceMessage::call)?;
-    syscall_registry.register_syscall_by_name(b"sol_compute_meter_remaining", SyscallComputeMeterRemaining::call)?;
-    syscall_registry.register_syscall_by_name(b"sol_compute_meter_set_remaining", SyscallComputeMeterSetRemaining::call)?;
-    syscall_registry.register_syscall_by_name(b"sol_cast", SyscallCast::call)?;
-
+ 
     if invoke_context
         .feature_set
         .is_active(&secp256k1_recover_syscall_enabled::id())
@@ -366,28 +358,6 @@ pub fn bind_syscall_context_objects<'a, 'b>(
         }),
         None,
     )?;
-
-    vm.bind_syscall_context_object(
-        Box::new(SyscallComputeMeterRemaining {
-            invoke_context: invoke_context.clone(),
-        }),
-        None,
-    )?;
-
-    vm.bind_syscall_context_object(
-        Box::new(SyscallComputeMeterSetRemaining {
-            invoke_context: invoke_context.clone(),
-        }),
-        None,
-    )?;
-
-    vm.bind_syscall_context_object(
-        Box::new(SyscallCast {
-            invoke_context: invoke_context.clone(),
-        }),
-        None,
-    )?;
-
     vm.bind_syscall_context_object(
         Box::new(SyscallMemcpy {
             invoke_context: invoke_context.clone(),
@@ -1449,198 +1419,7 @@ impl<'a, 'b> SyscallObject<BpfError> for SyscallSendTraceMessage<'a, 'b> {
                 .map_err(SyscallError::InstructionError),
             result
         );
-        //
-        // if vals_len > 0 {
-        //     let vals = question_mark!(
-        //         translate_slice::<u8>(memory_mapping, vals_addr, vals_len, &loader_id),
-        //         result
-        //     );
-        //     with(|listener|{listener.event(vals)});
-        // }
         with(|listener|{listener.event(vals_addr, memory_mapping, &loader_id)});
-        *result = Ok(0);
-    }
-}
-
-/// Get ComputeMeter.remaining
-pub struct SyscallComputeMeterRemaining<'a, 'b> {
-    invoke_context: Rc<RefCell<&'a mut InvokeContext<'b>>>,
-}
-impl<'a, 'b> SyscallObject<BpfError> for SyscallComputeMeterRemaining<'a, 'b> {
-    fn call(
-        &mut self,
-        _arg1: u64,
-        _arg2: u64,
-        _arg3: u64,
-        _arg4: u64,
-        _arg5: u64,
-        _memory_mapping: &MemoryMapping,
-        result: &mut Result<u64, EbpfError<BpfError>>,
-    ) {
-        let invoke_context = question_mark!(
-            self.invoke_context
-                .try_borrow_mut()
-                .map_err(|_| SyscallError::InvokeContextBorrowFailed),
-            result
-        );
-
-        // let loader_id = question_mark!(
-        //     invoke_context
-        //         .get_loader()
-        //         .map_err(SyscallError::InstructionError),
-        //     result
-        // );
-        //
-        // let value = question_mark!(
-        //     translate_slice_mut::<u8>(
-        //         memory_mapping,
-        //         result_addr,
-        //         8,
-        //         &loader_id,
-        //     ),
-        //     result
-        // );
-
-        let compute_meter = invoke_context.get_compute_meter();
-        let compute_meter = compute_meter.try_borrow().unwrap();
-        let remaining = compute_meter.get_remaining();
-        // remaining = remaining + 11_u64;
-
-        listener::with(|x| {x.save_bpf_units(remaining)});
-
-        // remaining_with(|counter| {*counter = remaining});
-        // println!("get remaining {}", remaining);
-        // value.copy_from_slice(&remaining.to_le_bytes());
-        *result = Ok(0);
-    }
-}
-
-/// Set ComputeMeter.remaining
-pub struct SyscallComputeMeterSetRemaining<'a, 'b> {
-    invoke_context: Rc<RefCell<&'a mut InvokeContext<'b>>>,
-}
-impl<'a, 'b> SyscallObject<BpfError> for SyscallComputeMeterSetRemaining<'a, 'b> {
-    fn call(
-        &mut self,
-        _arg1: u64,
-        _arg2: u64,
-        _arg3: u64,
-        _arg4: u64,
-        _arg5: u64,
-        _memory_mapping: &MemoryMapping,
-        result: &mut Result<u64, EbpfError<BpfError>>,
-    ) {
-        // println!("set remaining {}", remaining);
-        let invoke_context = question_mark!(
-            self.invoke_context
-                .try_borrow_mut()
-                .map_err(|_| SyscallError::InvokeContextBorrowFailed),
-            result
-        );
-
-
-        // let loader_id = question_mark!(
-        //     invoke_context
-        //         .get_loader()
-        //         .map_err(SyscallError::InstructionError),
-        //     result
-        // );
-
-        // let remaining = question_mark!(
-        //     translate_slice_mut::<u64>(
-        //         memory_mapping,
-        //         remaining,
-        //         1,
-        //         &loader_id,
-        //     ),
-        //     result
-        // );
-        //
-        // let val = remaining[0].clone();
-
-        let remaining = listener::with(|x| {x.restore_bpf_units()}).unwrap();
-        let compute_meter = invoke_context.get_compute_meter();
-        let mut compute_meter = compute_meter.try_borrow_mut().unwrap();
-
-        compute_meter.mock_set_remaining(remaining+1);
-        *result = Ok(0);
-    }
-}
-
-#[derive(Debug,  Clone)]
-pub struct Item<'a> {
-    a: u8,
-    // b: Vec<u8>,
-    b: &'a [u8],
-}
-
-/// cast
-pub struct SyscallCast<'a, 'b> {
-    invoke_context: Rc<RefCell<&'a mut InvokeContext<'b>>>,
-}
-impl<'a, 'b> SyscallObject<BpfError> for SyscallCast<'a, 'b> {
-    fn call(
-        &mut self,
-        ptr: u64,
-        _arg2: u64,
-        _arg3: u64,
-        _arg4: u64,
-        _arg5: u64,
-        memory_mapping: &MemoryMapping,
-        result: &mut Result<u64, EbpfError<BpfError>>,
-    ) {
-        println!("syscall cast ");
-        let invoke_context = question_mark!(
-            self.invoke_context
-                .try_borrow_mut()
-                .map_err(|_| SyscallError::InvokeContextBorrowFailed),
-            result
-        );
-
-
-        let loader_id = question_mark!(
-            invoke_context
-                .get_loader()
-                .map_err(SyscallError::InstructionError),
-            result
-        );
-
-        let value = question_mark!(
-            translate_slice::<u8>(
-                memory_mapping,
-                ptr,
-                size_of::<Item>() as u64,
-                &loader_id,
-            ),
-            result
-        );
-
-        let value = value  as *const _ as *const u8;
-
-        let ptr = value as *mut Item;
-        use std::mem::size_of;
-
-        unsafe {
-            let val: &[Item] = from_raw_parts_mut(ptr, size_of::<Item>());
-            // let val = &*ptr;
-            println!("{:?}", val[0].a);
-
-            let adr = val[0].b  as *const _ as *const u8;
-            let adr : u64 = adr as u64;
-
-            let value = question_mark!(
-
-                translate_slice::<u8>(
-                    memory_mapping,
-                    adr,
-                    3,
-                    &loader_id,
-                ),
-                result
-            );
-            println!("value {:?}", value);
-        }
-
         *result = Ok(0);
     }
 }
@@ -2794,7 +2573,6 @@ fn call<'a, 'b: 'a>(
     let caller_program_id = invoke_context
         .get_caller()
         .map_err(SyscallError::InstructionError)?;
-    // println!("caller_program_id: {}", caller_program_id);
     let signers = syscall.translate_signers(
         &loader_id,
         caller_program_id,
@@ -2803,7 +2581,6 @@ fn call<'a, 'b: 'a>(
         memory_mapping,
     )?;
     let stack_height = invoke_context.get_stack_height();
-    println!("syscalls::call() process_instruction ???????????? ");
     let (message, caller_write_privileges, program_indices) = invoke_context
         .create_message(&instruction, &signers)
         .map_err(SyscallError::InstructionError)?;
@@ -2822,11 +2599,6 @@ fn call<'a, 'b: 'a>(
 
     // Process instruction
     let message = SanitizedMessage::Legacy(message);
-
-    // let pr = program_indices.last().unwrap();
-    // println!("program id: {}", message.get_account_key(*pr).unwrap());
-    println!("{:?}", message);
-
     invoke_context
         .process_instruction(
             &message,
@@ -2839,23 +2611,9 @@ fn call<'a, 'b: 'a>(
         .result
         .map_err(SyscallError::InstructionError)?;
 
-    let a = invoke_context.get_keyed_accounts().unwrap();
-    // for acc in a {
-    //     println!("invoke_context.get_keyed_accounts() {:?}", acc);
-    // }
-
-    // let a = Pubkey::from_str("3eo33LSK8VhxZ6bK9Qh3F7oGBTTcLymy4Lj6RF7X2MeV").unwrap();
-    // let a = invoke_context.get_account(&a).unwrap();
-    // println!(" updated acc {:?}", a);
-    // println!("");
-
-
     // Copy results back to caller
     for (callee_account, caller_account) in accounts.iter_mut() {
-        // println!(" callee_account {:?}", callee_account);
         if let Some(caller_account) = caller_account {
-            // println!(" caller_account.data {:?}", caller_account.data);
-            // println!(" caller_account.lamports {:?}", caller_account.lamports);
             let callee_account = callee_account.borrow();
             *caller_account.lamports = callee_account.lamports();
             *caller_account.owner = *callee_account.owner();
@@ -2902,14 +2660,8 @@ fn call<'a, 'b: 'a>(
             caller_account
                 .data
                 .copy_from_slice(&callee_account.data()[0..new_len]);
-            // println!(" caller_account.data UPDATED {:?}", caller_account.data);
-            // println!(" caller_account.lamports UPDATED {:?}", caller_account.lamports);
-
         }
-        // println!("");
     }
-
-    println!("SUCCESS");
 
     Ok(SUCCESS)
 }

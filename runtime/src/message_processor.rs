@@ -72,7 +72,6 @@ impl MessageProcessor {
         lamports_per_signature: u64,
         current_accounts_data_len: u64,
     ) -> Result<ProcessedMessageInfo, TransactionError> {
-        println!("start process_messags()");
         let mut invoke_context = InvokeContext::new(
             rent,
             accounts,
@@ -93,8 +92,6 @@ impl MessageProcessor {
             .zip(program_indices.iter())
             .enumerate()
         {
-            println!("for instruction {} {} {:?}", instruction_index, program_id, instruction);
-
             invoke_context.record_top_level_instruction(
                 instruction.decompile(message).map_err(|err| {
                     TransactionError::InstructionError(instruction_index as u8, err)
@@ -106,7 +103,6 @@ impl MessageProcessor {
                 .is_active(&prevent_calling_precompiles_as_programs::id())
                 && is_precompile(program_id, |id| invoke_context.feature_set.is_active(id))
             {
-                println!("is precompile");
                 // Precompiled programs don't have an instruction processor
                 continue;
             }
@@ -120,7 +116,6 @@ impl MessageProcessor {
                         mut_account_ref.data_as_mut_slice(),
                         instruction_index as u16,
                     );
-                    println!("it is the sysvar account! ");
                     break;
                 }
             }

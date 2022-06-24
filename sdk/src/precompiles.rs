@@ -114,9 +114,7 @@ pub fn verify_if_precompile(
     feature_set: &Arc<FeatureSet>,
 ) -> Result<(), PrecompileError> {
     for precompile in PRECOMPILES.iter() {
-        println!("precompile {:?} {}", precompile.program_id, program_id);
         if precompile.check_id(program_id, |feature_id| feature_set.is_active(feature_id)) {
-            println!("checked");
             let instruction_datas: Vec<_> = all_instructions
                 .iter()
                 .map(|instruction| instruction.data.as_ref())
