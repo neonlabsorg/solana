@@ -22,7 +22,7 @@ libsecp256k1 = { version = "0.6.0", default-features = false, features= ["static
 bincode = "1.3.3"
 hex = "0.4.2"
 
-evm-loader = {version = "=0.7.6-dev",  path = "/home/user/CLionProjects/neonlabs/neon-evm/evm_loader/program", default_features = false, features = ["tracing"] }
+evm-loader = {version = "=0.7.6-dev",  git = "https://github.com/neonlabsorg/neon-evm.git", branch = "688_syscall_tracer_api", default_features = false, features = ["tracing"] }
 
 rlp = "0.5"
 rand = "0.7.0"

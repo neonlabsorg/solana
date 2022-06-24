@@ -706,6 +706,7 @@ checksum = "68b91989ae21441195d7d9b9993a2f9295c7e1a8c96255d8b729accddc124797"
 [[package]]
 name = "evm"
 version = "0.18.0"
+source = "git+https://github.com/neonlabsorg/neon-evm.git?branch=688_syscall_tracer_api#a81adca274a644ac2b73e072151e866bcca95fd1"
 dependencies = [
  "evm-core",
  "evm-runtime",
@@ -717,6 +718,7 @@ dependencies = [
 [[package]]
 name = "evm-core"
 version = "0.18.2"
+source = "git+https://github.com/neonlabsorg/neon-evm.git?branch=688_syscall_tracer_api#a81adca274a644ac2b73e072151e866bcca95fd1"
 dependencies = [
  "borsh",
  "fixed-hash",
@@ -732,6 +734,7 @@ dependencies = [
 [[package]]
 name = "evm-loader"
 version = "0.7.6-dev"
+source = "git+https://github.com/neonlabsorg/neon-evm.git?branch=688_syscall_tracer_api#a81adca274a644ac2b73e072151e866bcca95fd1"
 dependencies = [
  "arrayref",
  "bincode",
@@ -756,6 +759,7 @@ dependencies = [
 [[package]]
 name = "evm-runtime"
 version = "0.18.0"
+source = "git+https://github.com/neonlabsorg/neon-evm.git?branch=688_syscall_tracer_api#a81adca274a644ac2b73e072151e866bcca95fd1"
 dependencies = [
  "borsh",
  "evm-core",
