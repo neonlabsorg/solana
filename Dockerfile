@@ -19,11 +19,14 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/target/release/solana-keygen \
                     /opt/target/release/solana-validator \
                     /opt/target/release/solana-genesis \
-                    /opt/solana/bin/
+                    /usr/bin/
 
-COPY --from=builder /opt/scripts/run.sh /opt/fetch-spl.sh /opt/solana/
+COPY --from=builder /opt/scripts/run.sh /usr/bin/solana-run.sh
+COPY --from=builder /opt/fetch-spl.sh /usr/bin/
 
-ENV PATH /opt/solana/bin/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-WORKDIR /opt/solana
+WORKDIR /usr/bin
+RUN fetch-spl.sh
+
+ENV PATH /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EXPOSE 8899/tcp 9900/tcp 8900/tcp 8003/udp
-ENTRYPOINT [ "./run.sh" ]
+ENTRYPOINT [ "/usr/bin/solana-run.sh" ]
