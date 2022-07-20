@@ -12,7 +12,7 @@ ADD http://github.com/solana-labs/solana-program-library/archive/refs/tags/token
 RUN tar -xvf /opt/token-cli-v2.0.15.tar.gz && \
     cd /opt/solana-program-library-token-cli-v2.0.15/token/cli && \
     cargo build --release && \
-    cp /opt/solana-program-library-token-cli-v2.0.15/target/release/spl-token /usr/bin/
+    cp /opt/solana-program-library-token-cli-v2.0.15/target/release/spl-token /opt/
 
 
 FROM ubuntu:20.04
@@ -30,6 +30,7 @@ COPY --from=builder /opt/target/release/solana \
 
 COPY --from=builder /opt/scripts/run.sh /usr/bin/solana-run.sh
 COPY --from=builder /opt/fetch-spl.sh /usr/bin/
+COPY --from=spl-token-builder /opt/spl-token /usr/bin/
 
 WORKDIR /usr/bin
 RUN fetch-spl.sh
