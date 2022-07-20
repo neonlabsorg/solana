@@ -7,6 +7,13 @@ COPY . /opt
 WORKDIR /opt
 RUN cargo build --release --bin solana --bin solana-validator --bin solana-faucet --bin solana-genesis --bin solana-keygen
 
+FROM builder AS spl-token-builder
+ADD http://github.com/solana-labs/solana-program-library/archive/refs/tags/token-cli-v2.0.15.tar.gz /opt/
+RUN tar -xvf /opt/token-cli-v2.0.15.tar.gz && \
+    cd /opt/solana-program-library-token-cli-v2.0.15/token/cli && \
+    cargo build --release && \
+    cp /opt/solana-program-library-token-cli-v2.0.15/target/release/spl-token /usr/bin/
+
 
 FROM ubuntu:20.04
 
