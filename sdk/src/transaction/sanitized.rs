@@ -22,7 +22,7 @@ use {
 /// Maximum number of accounts that a transaction may lock.
 /// 64 was chosen because it is roughly twice the previous
 /// number of account keys that could fit in a legacy tx.
-pub const MAX_TX_ACCOUNT_LOCKS: usize = 64;
+pub const MAX_TX_ACCOUNT_LOCKS: usize = 128;
 
 /// Sanitized transaction and the hash of its message
 #[derive(Debug, Clone)]
