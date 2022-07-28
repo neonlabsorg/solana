@@ -1,0 +1,61 @@
+use crate::evm_instructions::make_ethereum_transaction;
+use evm_loader::H160;
+
+use solana_sdk::instruction::{Instruction, AccountMeta};
+use solana_program::{pubkey::Pubkey};
+use std::str::FromStr;
+
+
+fn make_keccak_instruction_data(instruction_index : u8, msg_len: u16, data_start : u16) ->Vec<u8> {
+    let mut data = Vec::new();
+
+    let check_count : u8 = 1;
+    let eth_address_size : u16 = 20;
+    let signature_size : u16 = 65;
+    let eth_address_offset: u16 = data_start;
+    let signature_offset : u16 = eth_address_offset + eth_address_size;
+    let message_data_offset : u16 = signature_offset + signature_size;
+
+    data.push(check_count);
+
+    data.push(signature_offset as u8);
+    data.push((signature_offset >> 8) as u8);
+
+    data.push(instruction_index);
+
+    data.push(eth_address_offset as u8);
+    data.push((eth_address_offset >> 8) as u8);
+
+    data.push(instruction_index);
+
+    data.push(message_data_offset as u8);
+    data.push((message_data_offset >> 8) as u8);
+
+    data.push(msg_len as u8);
+    data.push((msg_len >> 8) as u8);
+
+    data.push(instruction_index);
+    return data;
+}
+
+
+pub fn make_keccak_instruction(contract_address : &H160,) -> Result<Instruction, anyhow::Error> {
+
+    let keccakprog = Pubkey::from_str("KeccakSecp256k11111111111111111111111111111").unwrap();
+
+    let meta = vec![
+        AccountMeta::new(keccakprog, false),
+    ];
+    let (_sig, msg) = make_ethereum_transaction(0, contract_address);
+
+    let ix_data = make_keccak_instruction_data(1, msg.len() as u16, 5);
+
+
+    let instruction = Instruction::new_with_bytes(
+        keccakprog,
+        ix_data.as_slice(),
+        meta
+    );
+
+    Ok(instruction)
+}
