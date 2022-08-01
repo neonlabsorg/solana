@@ -2117,7 +2117,7 @@ impl Bank {
 
     /// Create a bank from explicit arguments and deserialized fields from snapshot
     #[allow(clippy::float_cmp)]
-    pub(crate) fn new_from_fields(
+    pub fn new_from_fields(
         bank_rc: BankRc,
         genesis_config: &GenesisConfig,
         fields: BankFieldsToDeserialize,

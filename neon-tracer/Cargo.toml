@@ -1,0 +1,18 @@
+[package]
+authors = ["Neon Labs"]
+edition = "2021"
+name = "neon-tracer"
+description = "Neon Tracer"
+version = "1.11.3"
+repository = "https://github.com/neonlabsorg/solana"
+license = "Apache-2.0"
+homepage = "https://neon-labs.org/"
+documentation = "https://docs.neon-labs.org/docs/developing/getting_started"
+default-run = "neon-tracer"
+
+[dependencies]
+solana-runtime = { path = "../runtime", version = "=1.11.3", features = ["tracer"] }
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.126"
+signal-hook = "0.3.14"
