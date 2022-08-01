@@ -1054,7 +1054,6 @@ pub struct ParallelPostgresClient {
     initialized_worker_count: Arc<AtomicUsize>,
     sender: Sender<DbWorkItem>,
     last_report: AtomicInterval,
-    transaction_write_version: AtomicU64,
 }
 
 impl ParallelPostgresClient {
@@ -1118,7 +1117,6 @@ impl ParallelPostgresClient {
             startup_done_count,
             initialized_worker_count,
             sender,
-            transaction_write_version: AtomicU64::default(),
         })
     }
 
