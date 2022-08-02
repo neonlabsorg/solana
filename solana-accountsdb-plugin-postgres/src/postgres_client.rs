@@ -27,7 +27,7 @@ use {
     std::{
         collections::HashSet,
         sync::{
-            atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+            atomic::{AtomicBool, AtomicUsize, Ordering},
             Arc, Mutex,
         },
         thread::{self, sleep, Builder, JoinHandle},
