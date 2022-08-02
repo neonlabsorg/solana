@@ -24,7 +24,6 @@ use {
     solana_transaction_status::{
         InnerInstructions, Reward, TransactionStatusMeta, TransactionTokenBalance,
     },
-    std::sync::atomic::Ordering,
 };
 
 const MAX_TRANSACTION_STATUS_LEN: usize = 256;
@@ -514,7 +513,7 @@ fn build_db_transaction(
             .as_ref()
             .to_vec(),
         meta: DbTransactionStatusMeta::from(transaction_info.transaction_status_meta),
-        index: transaction_info.index,
+        index: transaction_info.index as i64,
     }
 }
 
