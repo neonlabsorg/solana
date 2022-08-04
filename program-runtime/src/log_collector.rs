@@ -1,7 +1,7 @@
 pub use log;
 use std::{cell::RefCell, rc::Rc};
 
-const LOG_MESSAGES_BYTES_LIMIT: usize = 10 * 1000;
+const LOG_MESSAGES_BYTES_LIMIT: usize = 20 * 1000;
 
 pub struct LogCollector {
     messages: Vec<String>,
@@ -32,6 +32,10 @@ impl LogCollector {
         };
 
         let bytes_written = self.bytes_written.saturating_add(message.len());
+
+	let s = format!("XXXX bytes_written = {}", bytes_written);
+        self.messages.push(s);
+	
         if bytes_written >= limit {
             if !self.limit_warning {
                 self.limit_warning = true;
