@@ -39,7 +39,9 @@ impl LogCollector {
         if bytes_written >= limit {
             if !self.limit_warning {
                 self.limit_warning = true;
-                self.messages.push(String::from("Log truncated"));
+                self.messages.push(String::from("Log truncated because of limit"));
+   	        let s = format!("YYYY bytes_written = {}", bytes_written);ooo
+                self.messages.push(s);
             }
         } else {
             self.bytes_written = bytes_written;
