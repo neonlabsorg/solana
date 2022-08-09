@@ -4568,6 +4568,7 @@ impl AccountsDb {
 
     /// if 'load_into_read_cache_only', then return value is meaningless.
     ///   The goal is to get the account into the read-only cache.
+    #[cfg(not(feature = "tracer"))]
     fn do_load_with_populate_read_cache(
         &self,
         ancestors: &Ancestors,
@@ -4634,6 +4635,20 @@ impl AccountsDb {
                 .store(*pubkey, slot, account.clone());
         }
         Some((account, slot))
+    }
+
+    /// if 'load_into_read_cache_only', then return value is meaningless.
+    ///   The goal is to get the account into the read-only cache.
+    #[cfg(feature = "tracer")]
+    fn do_load_with_populate_read_cache(
+        &self,
+        ancestors: &Ancestors,
+        pubkey: &Pubkey,
+        max_root: Option<Slot>,
+        load_hint: LoadHint,
+        load_into_read_cache_only: bool,
+    ) -> Option<(AccountSharedData, Slot)> {
+        todo!()
     }
 
     pub fn load_account_hash(
