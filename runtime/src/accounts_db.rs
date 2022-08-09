@@ -47,6 +47,7 @@ use {
         bank::Rewrites,
         cache_hash_data::CacheHashData,
         contains::Contains,
+        dumper_db::DumperDbBank,
         expected_rent_collection::{ExpectedRentCollection, SlotInfoInEpoch},
         pubkey_bins::PubkeyBinCalculator24,
         read_only_accounts_cache::ReadOnlyAccountsCache,
@@ -1168,6 +1169,8 @@ pub struct AccountsDb {
     /// Used to disable logging dead slots during removal.
     /// allow disabling noisy log
     pub(crate) log_dead_slots: AtomicBool,
+
+    pub dumper_db: DumperDbBank,
 }
 
 #[derive(Debug, Default)]
@@ -1976,6 +1979,7 @@ impl AccountsDb {
             filler_account_suffix: None,
             num_hash_scan_passes,
             log_dead_slots: AtomicBool::new(true),
+            dumper_db: DumperDbBank::default(),
         }
     }
 
@@ -4648,7 +4652,7 @@ impl AccountsDb {
         load_hint: LoadHint,
         load_into_read_cache_only: bool,
     ) -> Option<(AccountSharedData, Slot)> {
-        todo!()
+        self.dumper_db.load_account(ancestors, pubkey, max_root)
     }
 
     pub fn load_account_hash(

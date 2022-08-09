@@ -169,8 +169,6 @@ use {
     },
 };
 
-use crate::dumper_db::DumperDb;
-
 /// params to `verify_bank_hash`
 pub struct VerifyBankHash {
     pub test_hash_calculation: bool,
