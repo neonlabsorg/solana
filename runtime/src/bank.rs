@@ -6457,6 +6457,7 @@ impl Bank {
         self.load_slow(&self.ancestors, pubkey)
     }
 
+    #[cfg(not(feature = "tracing"))]
     fn load_slow(
         &self,
         ancestors: &Ancestors,
@@ -6468,6 +6469,16 @@ impl Bank {
         self.rc.accounts.load_without_fixed_root(ancestors, pubkey)
     }
 
+    #[cfg(feature = "tracing")]
+    fn load_slow(
+        &self,
+        ancestors: &Ancestors,
+        pubkey: &Pubkey,
+    ) -> Option<(AccountSharedData, Slot)> {
+        todo!()
+    }
+
+    #[cfg(not(feature = "tracing"))]
     fn load_slow_with_fixed_root(
         &self,
         ancestors: &Ancestors,
@@ -6489,6 +6500,15 @@ impl Bank {
             }
             None => None,
         }
+    }
+
+    #[cfg(feature = "tracing")]
+    fn load_slow_with_fixed_root(
+        &self,
+        ancestors: &Ancestors,
+        pubkey: &Pubkey,
+    ) -> Option<(AccountSharedData, Slot)> {
+        todo!()
     }
 
     pub fn get_program_accounts(
