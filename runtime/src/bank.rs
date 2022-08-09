@@ -43,7 +43,7 @@ use {
             TransactionLoadResult,
         },
         accounts_db::{
-            AccountShrinkThreshold, AccountsDbConfig, SnapshotStorages,
+            AccountsDb, AccountShrinkThreshold, AccountsDbConfig, SnapshotStorages,
             ACCOUNTS_DB_CONFIG_FOR_BENCHMARKS, ACCOUNTS_DB_CONFIG_FOR_TESTING,
         },
         accounts_index::{AccountSecondaryIndexes, IndexKey, ScanConfig, ScanResult, ZeroLamport},
@@ -2268,6 +2268,35 @@ impl Bank {
             ),
         );
         bank
+    }
+
+    pub fn new_for_tracer() -> Bank {
+        let genesis_config = GenesisConfig::new(&[], &[]);
+        let accounts_db = AccountsDb::default_for_tests();
+        let mut bank_fields = BankFieldsToDeserialize::default();
+
+        bank_fields.ticks_per_slot = genesis_config.ticks_per_slot;
+        bank_fields.ns_per_slot = genesis_config.poh_config.target_tick_duration.as_nanos()
+            * genesis_config.ticks_per_slot as u128;
+        bank_fields.genesis_creation_time = genesis_config.creation_time;
+        bank_fields.max_tick_height = (bank_fields.slot + 1) * bank_fields.ticks_per_slot;
+        bank_fields.slots_per_year =
+            years_as_slots(
+                1.0,
+                &genesis_config.poh_config.target_tick_duration,
+                bank_fields.ticks_per_slot,
+            );
+        let bank_rc = BankRc::new(Accounts::new_empty(accounts_db), bank_fields.slot);
+
+        Bank::new_from_fields(
+            bank_rc,
+            &genesis_config,
+            bank_fields,
+            None,
+            None,
+            true,
+            0,
+        )
     }
 
     /// Return subset of bank fields representing serializable state
