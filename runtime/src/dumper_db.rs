@@ -10,9 +10,11 @@ use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
 use thiserror::Error;
 use log::*;
 use postgres_openssl::MakeTlsConnector;
+use solana_sdk::account::WritableAccount;
 
 pub struct DumperDb {
     client: Mutex<Client>,
+    get_accounts_at_slot_statement: Statement,
 }
 
 impl std::fmt::Debug for DumperDb {
@@ -128,14 +130,60 @@ impl DumperDb {
         info!("Creating Postgres Client...");
         let mut client = Self::connect_to_db(config)?;
 
-        info!("Created Postgres Client.");
-        Ok(Self {
-            client: Mutex::new(client),
-        })
+        let stmt = "SELECT * FROM get_accounts_at_slot($1, $2)";
+        let stmt = client.prepare(stmt);
+
+        match stmt {
+            Err(err) => {
+                return Err(DumperDbError::Custom { msg: "Failed to prepare get_account_at_slot statement".to_string() });
+            },
+
+            Ok(stmt) => {
+                info!("Created Postgres Client.");
+                return Ok(Self {
+                    client: Mutex::new(client),
+                    get_accounts_at_slot_statement: stmt,
+                })
+            },
+        }
     }
 
-    pub fn load_account(&self, pubkey: &Pubkey, max_slot: Slot) -> Option<(AccountSharedData, Slot)> {
-        todo!()
+    pub fn load_account(&self, pubkey: &Pubkey, slot: Slot) -> Option<(AccountSharedData, Slot)> {
+        let mut client = self.client.lock().unwrap();
+        let pubkey_bytes = pubkey.to_bytes();
+        let pubkeys = vec!(pubkey_bytes.as_slice());
+        let result = client.query(
+            &self.get_accounts_at_slot_statement,
+            &[
+                &pubkeys,
+                &(slot as i64),
+            ]
+        );
+
+        if let Err(err) = result {
+            let msg = format!("Failed to load account: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let rows = result.unwrap();
+        if rows.len() != 1 {
+            panic!("More than one occurance of account found!");
+        }
+
+        let row = &rows[0];
+        let lamports: i64 = row.try_get(2).unwrap();
+        let rent_epoch: i64 = row.try_get(4).unwrap();
+
+        let account = AccountSharedData::create(
+            lamports as u64,
+            row.try_get(5).unwrap(),
+            Pubkey::new(row.try_get(1).unwrap()),
+            row.try_get(3).unwrap(),
+            rent_epoch as u64
+        );
+
+        Some((account, slot))
     }
 }
 
