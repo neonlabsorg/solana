@@ -7498,6 +7498,7 @@ impl AccountsDb {
         self.store((slot, accounts), false, None);
     }
 
+    #[cfg(not(feature = "tracer"))]
     fn store<'a, T: ReadableAccount + Sync + ZeroLamport>(
         &self,
         accounts: impl StorableAccounts<'a, T>,
@@ -7534,6 +7535,16 @@ impl AccountsDb {
         // we use default hashes for now since the same account may be stored to the cache multiple times
         self.store_accounts_unfrozen(accounts, None, is_cached_store, txn_signatures);
         self.report_store_timings();
+    }
+
+    #[cfg(feature = "tracer")]
+    fn store<'a, T: ReadableAccount + Sync + ZeroLamport>(
+        &self,
+        accounts: impl StorableAccounts<'a, T>,
+        is_cached_store: bool,
+        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+    ) {
+        todo!()
     }
 
     fn report_store_timings(&self) {
