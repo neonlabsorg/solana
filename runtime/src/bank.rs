@@ -2292,149 +2292,15 @@ impl Bank {
             );
         let bank_rc = BankRc::new(Accounts::new_empty(accounts_db), fields.slot);
 
-
-        let now = Instant::now();
-        let ancestors = Ancestors::from(&fields.ancestors);
-        // For backward compatibility, we can only serialize and deserialize
-        // Stakes<Delegation> in BankFieldsTo{Serialize,Deserialize}. But Bank
-        // caches Stakes<StakeAccount>. Below Stakes<StakeAccount> is obtained
-        // from Stakes<Delegation> by reading the full account state from
-        // accounts-db. Note that it is crucial that these accounts are loaded
-        // at the right slot and match precisely with serialized Delegations.
-        let stakes = Stakes::new(&fields.stakes, |pubkey| {
-            let (account, _slot) = bank_rc.accounts.load_with_fixed_root(&ancestors, pubkey)?;
-            Some(account)
-        })
-            .expect(
-                "Stakes cache is inconsistent with accounts-db. This can indicate \
-            a corrupted snapshot or bugs in cached accounts or accounts-db.",
-            );
-        let stakes_accounts_load_duration = now.elapsed();
-        fn new<T: Default>() -> T {
-            T::default()
-        }
-        let feature_set = new();
-        let mut bank = Self {
-            rewrites_skipped_this_slot: Rewrites::default(),
-            rc: bank_rc,
-            status_cache: new(),
-            blockhash_queue: RwLock::new(fields.blockhash_queue),
-            ancestors,
-            hash: RwLock::new(fields.hash),
-            parent_hash: fields.parent_hash,
-            parent_slot: fields.parent_slot,
-            hard_forks: Arc::new(RwLock::new(fields.hard_forks)),
-            transaction_count: AtomicU64::new(fields.transaction_count),
-            transaction_error_count: new(),
-            transaction_entries_count: new(),
-            transactions_per_entry_max: new(),
-            tick_height: AtomicU64::new(fields.tick_height),
-            signature_count: AtomicU64::new(fields.signature_count),
-            capitalization: AtomicU64::new(fields.capitalization),
-            max_tick_height: fields.max_tick_height,
-            hashes_per_tick: fields.hashes_per_tick,
-            ticks_per_slot: fields.ticks_per_slot,
-            ns_per_slot: fields.ns_per_slot,
-            genesis_creation_time: fields.genesis_creation_time,
-            slots_per_year: fields.slots_per_year,
-            slot: fields.slot,
-            bank_id: 0,
-            epoch: fields.epoch,
-            block_height: fields.block_height,
-            collector_id: fields.collector_id,
-            collector_fees: AtomicU64::new(fields.collector_fees),
-            fee_calculator: fields.fee_calculator,
-            fee_rate_governor: fields.fee_rate_governor,
-            collected_rent: AtomicU64::new(fields.collected_rent),
-            // clone()-ing is needed to consider a gated behavior in rent_collector
-            rent_collector: Self::get_rent_collector_from(&fields.rent_collector, fields.epoch),
-            epoch_schedule: fields.epoch_schedule,
-            inflation: Arc::new(RwLock::new(fields.inflation)),
-            stakes_cache: StakesCache::new(stakes),
-            epoch_stakes: fields.epoch_stakes,
-            is_delta: AtomicBool::new(fields.is_delta),
-            builtin_programs: new(),
-            compute_budget: None,
-            builtin_feature_transitions: new(),
-            rewards: new(),
-            cluster_type: Some(genesis_config.cluster_type),
-            lazy_rent_collection: new(),
-            rewards_pool_pubkeys: new(),
-            cached_executors: RwLock::new(CachedExecutors::new(MAX_CACHED_EXECUTORS, fields.epoch)),
-            transaction_debug_keys: None,
-            transaction_log_collector_config: new(),
-            transaction_log_collector: new(),
-            feature_set: Arc::clone(&feature_set),
-            drop_callback: RwLock::new(OptionalDropCallback(None)),
-            freeze_started: AtomicBool::new(fields.hash != Hash::default()),
-            vote_only_bank: false,
-            cost_tracker: RwLock::new(CostTracker::default()),
-            sysvar_cache: RwLock::new(SysvarCache::default()),
-            accounts_data_size_initial,
-            accounts_data_size_delta_on_chain: AtomicI64::new(0),
-            accounts_data_size_delta_off_chain: AtomicI64::new(0),
-            fee_structure: FeeStructure::default(),
-        };
-        bank.finish_init(
+        Bank::new_from_fields(
+            bank_rc,
             &genesis_config,
+            fields,
+            None,
             None,
             false,
-        );
-
-        // Sanity assertions between bank snapshot and genesis config
-        // Consider removing from serializable bank state
-        // (BankFieldsToSerialize/BankFieldsToDeserialize) and initializing
-        // from the passed in genesis_config instead (as new()/new_with_paths() already do)
-        assert_eq!(
-            bank.hashes_per_tick,
-            genesis_config.poh_config.hashes_per_tick
-        );
-        assert_eq!(bank.ticks_per_slot, genesis_config.ticks_per_slot);
-        assert_eq!(
-            bank.ns_per_slot,
-            genesis_config.poh_config.target_tick_duration.as_nanos()
-                * genesis_config.ticks_per_slot as u128
-        );
-        assert_eq!(bank.genesis_creation_time, genesis_config.creation_time);
-        assert_eq!(bank.max_tick_height, (bank.slot + 1) * bank.ticks_per_slot);
-        assert_eq!(
-            bank.slots_per_year,
-            years_as_slots(
-                1.0,
-                &genesis_config.poh_config.target_tick_duration,
-                bank.ticks_per_slot,
-            )
-        );
-        assert_eq!(bank.epoch_schedule, genesis_config.epoch_schedule);
-        assert_eq!(bank.epoch, bank.epoch_schedule.get_epoch(bank.slot));
-        if !bank.feature_set.is_active(&disable_fee_calculator::id()) {
-            bank.fee_rate_governor.lamports_per_signature =
-                bank.fee_calculator.lamports_per_signature;
-            assert_eq!(
-                bank.fee_rate_governor.create_fee_calculator(),
-                bank.fee_calculator
-            );
-        }
-
-        datapoint_info!(
-            "bank-new-from-fields",
-            (
-                "accounts_data_len-from-snapshot",
-                fields.accounts_data_len as i64,
-                i64
-            ),
-            (
-                "accounts_data_len-from-generate_index",
-                accounts_data_size_initial as i64,
-                i64
-            ),
-            (
-                "stakes_accounts_load_duration_us",
-                stakes_accounts_load_duration.as_micros(),
-                i64
-            ),
-        );
-        bank
+            0,
+        )
     }
 
     /// Return subset of bank fields representing serializable state
