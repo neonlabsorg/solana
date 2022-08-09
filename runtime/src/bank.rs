@@ -1022,7 +1022,6 @@ impl PartialEq for Bank {
         }
         let Self {
             rc: _,
-            dumper_db: _,
             status_cache: _,
             blockhash_queue,
             ancestors,
@@ -1192,8 +1191,6 @@ impl AbiExample for BuiltinPrograms {
 pub struct Bank {
     /// References to accounts, parent and signature status
     pub rc: BankRc,
-
-    pub dumper_db: Arc<DumperDb>,
 
     /// A cache of signature statuses
     pub status_cache: Arc<RwLock<BankStatusCache>>,
@@ -1488,7 +1485,6 @@ impl Bank {
         let mut bank = Self {
             rewrites_skipped_this_slot: Rewrites::default(),
             rc: BankRc::new(accounts, Slot::default()),
-            dumper_db: Arc::<DumperDb>::default(),
             status_cache: Arc::<RwLock<BankStatusCache>>::default(),
             blockhash_queue: RwLock::<BlockhashQueue>::default(),
             ancestors: Ancestors::default(),
@@ -1796,7 +1792,6 @@ impl Bank {
         let mut new = Bank {
             rewrites_skipped_this_slot: Rewrites::default(),
             rc,
-            dumper_db: Arc::<DumperDb>::default(),
             status_cache,
             slot,
             bank_id,
@@ -2124,7 +2119,7 @@ impl Bank {
 
     /// Create a bank from explicit arguments and deserialized fields from snapshot
     #[allow(clippy::float_cmp)]
-    pub fn new_from_fields(
+    pub(crate) fn new_from_fields(
         bank_rc: BankRc,
         genesis_config: &GenesisConfig,
         fields: BankFieldsToDeserialize,
@@ -2157,7 +2152,6 @@ impl Bank {
         let mut bank = Self {
             rewrites_skipped_this_slot: Rewrites::default(),
             rc: bank_rc,
-            dumper_db: Arc::<DumperDb>::default(),
             status_cache: new(),
             blockhash_queue: RwLock::new(fields.blockhash_queue),
             ancestors,
@@ -2281,11 +2275,10 @@ impl Bank {
     #[cfg(feature = "tracer")]
     #[allow(clippy::float_cmp)]
     pub fn new_for_tracer(
-        dumper_db: Arc<DumperDb>,
+        accounts_db: AccountsDb,
         accounts_data_size_initial: u64,
     ) -> Self {
         let genesis_config = GenesisConfig::new(&[], &[]);
-        let accounts_db = AccountsDb::default_for_tests();
         let mut fields = BankFieldsToDeserialize::default();
 
         fields.ticks_per_slot = genesis_config.ticks_per_slot;
@@ -2326,7 +2319,6 @@ impl Bank {
         let mut bank = Self {
             rewrites_skipped_this_slot: Rewrites::default(),
             rc: bank_rc,
-            dumper_db,
             status_cache: new(),
             blockhash_queue: RwLock::new(fields.blockhash_queue),
             ancestors,
@@ -6634,7 +6626,6 @@ impl Bank {
         self.load_slow(&self.ancestors, pubkey)
     }
 
-    #[cfg(not(feature = "tracer"))]
     fn load_slow(
         &self,
         ancestors: &Ancestors,
@@ -6646,16 +6637,6 @@ impl Bank {
         self.rc.accounts.load_without_fixed_root(ancestors, pubkey)
     }
 
-    #[cfg(feature = "tracer")]
-    fn load_slow(
-        &self,
-        ancestors: &Ancestors,
-        pubkey: &Pubkey,
-    ) -> Option<(AccountSharedData, Slot)> {
-        todo!()
-    }
-
-    #[cfg(not(feature = "tracer"))]
     fn load_slow_with_fixed_root(
         &self,
         ancestors: &Ancestors,
@@ -6677,15 +6658,6 @@ impl Bank {
             }
             None => None,
         }
-    }
-
-    #[cfg(feature = "tracer")]
-    fn load_slow_with_fixed_root(
-        &self,
-        ancestors: &Ancestors,
-        pubkey: &Pubkey,
-    ) -> Option<(AccountSharedData, Slot)> {
-        todo!()
     }
 
     pub fn get_program_accounts(
