@@ -23,10 +23,10 @@ pub fn main() {
     };
     let dumper_db = DumperDb::new(&config).unwrap();
     let mut accounts_db = AccountsDb::default_for_tests();
-    accounts_db.dumper_db = DumperDbBank {
-        dumper_db: Some(Arc::new(dumper_db)),
-        slot: 0,
-    };
+    accounts_db.dumper_db = DumperDbBank::new(
+        Arc::new(dumper_db),
+        0
+    );
     let bank = Bank::new_for_tracer(accounts_db, 0);
     return;
 }

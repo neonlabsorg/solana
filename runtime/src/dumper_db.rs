@@ -11,6 +11,7 @@ use thiserror::Error;
 use log::*;
 use postgres_openssl::MakeTlsConnector;
 use solana_sdk::account::WritableAccount;
+use std::collections::BTreeMap;
 
 pub struct DumperDb {
     client: Mutex<Client>,
@@ -148,7 +149,7 @@ impl DumperDb {
         }
     }
 
-    pub fn load_account(&self, pubkey: &Pubkey, slot: Slot) -> Option<(AccountSharedData, Slot)> {
+    pub fn load_account(&self, pubkey: &Pubkey, slot: Slot) -> Option<AccountSharedData> {
         let mut client = self.client.lock().unwrap();
         let pubkey_bytes = pubkey.to_bytes();
         let pubkeys = vec!(pubkey_bytes.as_slice());
@@ -183,7 +184,7 @@ impl DumperDb {
             rent_epoch as u64
         );
 
-        Some((account, slot))
+        Some(account)
     }
 }
 
@@ -191,15 +192,34 @@ impl DumperDb {
 pub struct DumperDbBank {
     pub dumper_db: Option<Arc<DumperDb>>,
     pub slot: Slot,
+    pub account_cache: Mutex<BTreeMap<Pubkey, AccountSharedData>>,
 }
 
 impl DumperDbBank {
+    pub fn new(dumper_db: Arc<DumperDb>, slot: Slot) -> Self {
+        DumperDbBank {
+            dumper_db: Some(dumper_db),
+            slot,
+            account_cache: Mutex::new(BTreeMap::new()),
+        }
+    }
+
     pub fn load_account(
         &self,
         ancestors: &Ancestors,
         pubkey: &Pubkey,
         max_root: Option<Slot>
     ) -> Option<(AccountSharedData, Slot)> {
-        self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot)
+        let mut account_cache = self.account_cache.lock().unwrap();
+        if let Some(account) = account_cache.get(pubkey) {
+            return Some((account.clone(), self.slot))
+        }
+
+        if let Some(account) = self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
+            account_cache.insert(*pubkey, account.clone());
+            return Some((account, self.slot))
+        }
+
+        None
     }
 }
