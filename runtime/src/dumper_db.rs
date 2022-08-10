@@ -1,20 +1,17 @@
 use {
-    postgres::{Client, NoTls, Statement},
+    crate::ancestors::Ancestors,
+    log::*,
+    openssl::ssl::{SslConnector, SslFiletype, SslMethod},
+    postgres::{Client, NoTls, Row, row::RowIndex, Statement},
+    postgres_openssl::MakeTlsConnector,
+    postgres_types::FromSql,
+    solana_sdk::{
+        account::{ AccountSharedData, WritableAccount },
+        clock::Slot, pubkey::Pubkey
+    },
+    std::{ collections::BTreeMap, sync::{ Arc, Mutex }},
+    thiserror::Error,
 };
-use solana_sdk::account::AccountSharedData;
-use solana_sdk::clock::Slot;
-use solana_sdk::pubkey::Pubkey;
-use std::sync::{ Arc, Mutex };
-use crate::ancestors::Ancestors;
-use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
-use thiserror::Error;
-use log::*;
-use postgres_openssl::MakeTlsConnector;
-use solana_sdk::account::WritableAccount;
-use std::collections::BTreeMap;
-use postgres::Row;
-use postgres::row::RowIndex;
-use postgres_types::FromSql;
 
 pub struct DumperDb {
     client: Mutex<Client>,
