@@ -102,6 +102,8 @@ args=(
   --identity "$validator_identity"
   --vote-account "$validator_vote_account"
   --ledger "$ledgerDir"
+# In version 1.4.3 Solana deploy use 8003 udp port. The address to which the client send packets is specified in gossip
+  --gossip-host $(hostname -i)
   --gossip-port 8001
   --full-rpc-api
   --rpc-port 8899
