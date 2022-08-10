@@ -1,14 +1,12 @@
 use std::sync;
 use {
     solana_runtime::{
-        accounts_db::AccountsDb,
         bank::Bank,
         dumper_db::{ DumperDb, DumperDbConfig }
     },
     sync::Arc,
+    solana_sdk::genesis_config::ClusterType,
 };
-use solana_runtime::dumper_db::DumperDbBank;
-use solana_runtime::inline_spl_token_2022::Account;
 
 pub fn main() {
     let config = DumperDbConfig {
@@ -21,12 +19,13 @@ pub fn main() {
         client_cert: None,
         client_key: None,
     };
+
     let dumper_db = DumperDb::new(&config).unwrap();
-    let mut accounts_db = AccountsDb::default_for_tests();
-    accounts_db.dumper_db = DumperDbBank::new(
+    let bank = Bank::new_for_tracer(
+        0,
+        ClusterType::Development,
         Arc::new(dumper_db),
         0
     );
-    let bank = Bank::new_for_tracer(accounts_db, 0);
     return;
 }

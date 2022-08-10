@@ -43,7 +43,7 @@ use {
             TransactionLoadResult,
         },
         accounts_db::{
-            AccountsDb, AccountShrinkThreshold, AccountsDbConfig, SnapshotStorages,
+            AccountShrinkThreshold, AccountsDbConfig, SnapshotStorages,
             ACCOUNTS_DB_CONFIG_FOR_BENCHMARKS, ACCOUNTS_DB_CONFIG_FOR_TESTING,
         },
         accounts_index::{AccountSecondaryIndexes, IndexKey, ScanConfig, ScanResult, ZeroLamport},
@@ -167,6 +167,13 @@ use {
         },
         time::{Duration, Instant},
     },
+};
+
+#[cfg(feature = "tracer")]
+use {
+    crate::accounts_db::AccountsDb,
+    crate::dumper_db::{ DumperDb, DumperDbBank },
+    solana_sdk::sysvar::rent::Rent,
 };
 
 /// params to `verify_bank_hash`
@@ -2273,11 +2280,26 @@ impl Bank {
     #[cfg(feature = "tracer")]
     #[allow(clippy::float_cmp)]
     pub fn new_for_tracer(
-        accounts_db: AccountsDb,
+        slot: Slot,
+        cluster_type: ClusterType,
+        dumper_db: Arc<DumperDb>,
         accounts_data_size_initial: u64,
     ) -> Self {
-        let genesis_config = GenesisConfig::new(&[], &[]);
+        let epoch_schedule = dumper_db.load_account(&sysvar::epoch_schedule::id(), slot).unwrap();
+        let epoch_schedule: EpochSchedule = from_account(&epoch_schedule).unwrap();
+        let rent = dumper_db.load_account(&sysvar::rent::id(), slot).unwrap();
+        let rent: Rent = from_account(&rent).unwrap();
+
+        let mut genesis_config = GenesisConfig::new(&[], &[]);
+        genesis_config.cluster_type = cluster_type;
+        genesis_config.epoch_schedule = epoch_schedule;
+        genesis_config.rent = rent;
+
         let mut fields = BankFieldsToDeserialize::default();
+        fields.epoch_schedule = epoch_schedule;
+        fields.rent_collector.rent = rent;
+        fields.rent_collector.epoch_schedule = fields.epoch_schedule;
+        fields.rent_collector.epoch = fields.epoch_schedule.get_epoch(fields.slot);
 
         fields.ticks_per_slot = genesis_config.ticks_per_slot;
         fields.ns_per_slot = genesis_config.poh_config.target_tick_duration.as_nanos()
@@ -2290,6 +2312,9 @@ impl Bank {
                 &genesis_config.poh_config.target_tick_duration,
                 fields.ticks_per_slot,
             );
+
+        let mut accounts_db = AccountsDb::default_for_tests();
+        accounts_db.dumper_db = DumperDbBank::new(dumper_db, slot);
         let bank_rc = BankRc::new(Accounts::new_empty(accounts_db), fields.slot);
 
         Bank::new_from_fields(
@@ -2299,7 +2324,7 @@ impl Bank {
             None,
             None,
             false,
-            0,
+            accounts_data_size_initial,
         )
     }
 
