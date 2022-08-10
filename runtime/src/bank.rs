@@ -108,8 +108,9 @@ use {
         epoch_schedule::EpochSchedule,
         feature,
         feature_set::{
-            self, add_set_compute_unit_price_ix, disable_fee_calculator,
-            enable_early_verification_of_account_modifications, FeatureSet,
+            self, add_set_compute_unit_price_ix, default_units_per_instruction,
+            disable_fee_calculator, enable_early_verification_of_account_modifications,
+            use_default_units_in_fee_calculation, FeatureSet,
         },
         fee::FeeStructure,
         fee_calculator::{FeeCalculator, FeeRateGovernor},
@@ -177,6 +178,7 @@ pub struct VerifyBankHash {
     pub ignore_mismatch: bool,
     pub require_rooted_bank: bool,
     pub run_in_background: bool,
+    pub store_hash_raw_data_for_debug: bool,
 }
 
 #[derive(Debug, Default)]
@@ -3708,6 +3710,8 @@ impl Bank {
             &self.fee_structure,
             self.feature_set
                 .is_active(&add_set_compute_unit_price_ix::id()),
+            self.feature_set
+                .is_active(&use_default_units_in_fee_calculation::id()),
         ))
     }
 
@@ -3749,6 +3753,8 @@ impl Bank {
             &self.fee_structure,
             self.feature_set
                 .is_active(&add_set_compute_unit_price_ix::id()),
+            self.feature_set
+                .is_active(&use_default_units_in_fee_calculation::id()),
         )
     }
 
@@ -4375,6 +4381,9 @@ impl Bank {
                     | TransactionError::InsufficientFundsForRent { .. } => {
                         error_counters.invalid_rent_paying_account += 1;
                     }
+                    TransactionError::InvalidAccountIndex => {
+                        error_counters.invalid_account_index += 1;
+                    }
                     _ => {
                         error_counters.instruction_error += 1;
                     }
@@ -4542,6 +4551,7 @@ impl Bank {
                             Measure::start("compute_budget_process_transaction_time");
                         let process_transaction_result = compute_budget.process_instructions(
                             tx.message().program_instructions_iter(),
+                            feature_set.is_active(&default_units_per_instruction::id()),
                             feature_set.is_active(&add_set_compute_unit_price_ix::id()),
                         );
                         compute_budget_process_transaction_time.stop();
@@ -4795,6 +4805,12 @@ impl Bank {
         self.accounts_data_size_initial = amount;
     }
 
+    /// Update the accounts data size off-chain delta
+    /// NOTE: This fn is *ONLY FOR TESTS*
+    pub fn update_accounts_data_size_delta_off_chain_for_tests(&self, amount: i64) {
+        self.update_accounts_data_size_delta_off_chain(amount)
+    }
+
     fn get_num_signatures_in_message(message: &SanitizedMessage) -> u64 {
         let mut num_signatures = u64::from(message.header().num_required_signatures);
         // This next part is really calculating the number of pre-processor
@@ -4822,6 +4838,7 @@ impl Bank {
         lamports_per_signature: u64,
         fee_structure: &FeeStructure,
         support_set_compute_unit_price_ix: bool,
+        use_default_units_per_instruction: bool,
     ) -> u64 {
         // Fee based on compute units and signatures
         const BASE_CONGESTION: f64 = 5_000.0;
@@ -4836,6 +4853,7 @@ impl Bank {
         let prioritization_fee_details = compute_budget
             .process_instructions(
                 message.program_instructions_iter(),
+                use_default_units_per_instruction,
                 support_set_compute_unit_price_ix,
             )
             .unwrap_or_default();
@@ -4902,6 +4920,8 @@ impl Bank {
                     &self.fee_structure,
                     self.feature_set
                         .is_active(&add_set_compute_unit_price_ix::id()),
+                    self.feature_set
+                        .is_active(&use_default_units_in_fee_calculation::id()),
                 );
 
                 // In case of instruction error, even though no accounts
@@ -6887,6 +6907,7 @@ impl Bank {
                             &rent_collector,
                             config.can_cached_slot_be_unflushed,
                             config.ignore_mismatch,
+                            config.store_hash_raw_data_for_debug,
                         );
                         accounts_
                             .accounts_db
@@ -6907,6 +6928,7 @@ impl Bank {
                 rent_collector,
                 config.can_cached_slot_be_unflushed,
                 config.ignore_mismatch,
+                config.store_hash_raw_data_for_debug,
             );
             self.set_initial_accounts_hash_verification_completed();
             result
@@ -7146,6 +7168,7 @@ impl Bank {
                 ignore_mismatch: false,
                 require_rooted_bank: false,
                 run_in_background: true,
+                store_hash_raw_data_for_debug: false,
             });
             verify_time.stop();
             (verify, verify_time.as_us())
@@ -7489,6 +7512,11 @@ impl Bank {
     fn preserve_rent_epoch_for_rent_exempt_accounts(&self) -> bool {
         self.feature_set
             .is_active(&feature_set::preserve_rent_epoch_for_rent_exempt_accounts::id())
+    }
+
+    pub fn concurrent_replay_of_forks(&self) -> bool {
+        self.feature_set
+            .is_active(&feature_set::concurrent_replay_of_forks::id())
     }
 
     pub fn read_cost_tracker(&self) -> LockResult<RwLockReadGuard<CostTracker>> {
@@ -10372,6 +10400,7 @@ pub(crate) mod tests {
                 ignore_mismatch: false,
                 require_rooted_bank: false,
                 run_in_background: false,
+                store_hash_raw_data_for_debug: false,
             }
         }
     }
@@ -10864,6 +10893,7 @@ pub(crate) mod tests {
                 .lamports_per_signature,
             &FeeStructure::default(),
             true,
+            true,
         );
 
         let (expected_fee_collected, expected_fee_burned) =
@@ -11045,6 +11075,7 @@ pub(crate) mod tests {
             cheap_lamports_per_signature,
             &FeeStructure::default(),
             true,
+            true,
         );
         assert_eq!(
             bank.get_balance(&mint_keypair.pubkey()),
@@ -11061,6 +11092,7 @@ pub(crate) mod tests {
             &SanitizedMessage::try_from(Message::new(&[], Some(&Pubkey::new_unique()))).unwrap(),
             expensive_lamports_per_signature,
             &FeeStructure::default(),
+            true,
             true,
         );
         assert_eq!(
@@ -11176,6 +11208,7 @@ pub(crate) mod tests {
                                 .create_fee_calculator()
                                 .lamports_per_signature,
                             &FeeStructure::default(),
+                            true,
                             true,
                         ) * 2
                     )
@@ -17775,7 +17808,8 @@ pub(crate) mod tests {
                     lamports_per_signature: 0,
                     ..FeeStructure::default()
                 },
-                true
+                true,
+                true,
             ),
             0
         );
@@ -17789,7 +17823,8 @@ pub(crate) mod tests {
                     lamports_per_signature: 1,
                     ..FeeStructure::default()
                 },
-                true
+                true,
+                true,
             ),
             1
         );
@@ -17808,7 +17843,8 @@ pub(crate) mod tests {
                     lamports_per_signature: 2,
                     ..FeeStructure::default()
                 },
-                true
+                true,
+                true,
             ),
             4
         );
@@ -17828,7 +17864,7 @@ pub(crate) mod tests {
         let message =
             SanitizedMessage::try_from(Message::new(&[], Some(&Pubkey::new_unique()))).unwrap();
         assert_eq!(
-            Bank::calculate_fee(&message, 1, &fee_structure, true),
+            Bank::calculate_fee(&message, 1, &fee_structure, true, true,),
             max_fee + lamports_per_signature
         );
 
@@ -17840,7 +17876,7 @@ pub(crate) mod tests {
             SanitizedMessage::try_from(Message::new(&[ix0, ix1], Some(&Pubkey::new_unique())))
                 .unwrap();
         assert_eq!(
-            Bank::calculate_fee(&message, 1, &fee_structure, true),
+            Bank::calculate_fee(&message, 1, &fee_structure, true, true,),
             max_fee + 3 * lamports_per_signature
         );
 
@@ -17873,7 +17909,7 @@ pub(crate) mod tests {
                 Some(&Pubkey::new_unique()),
             ))
             .unwrap();
-            let fee = Bank::calculate_fee(&message, 1, &fee_structure, true);
+            let fee = Bank::calculate_fee(&message, 1, &fee_structure, true, true);
             assert_eq!(
                 fee,
                 lamports_per_signature + prioritization_fee_details.get_fee()
@@ -17911,7 +17947,10 @@ pub(crate) mod tests {
             Some(&key0),
         ))
         .unwrap();
-        assert_eq!(Bank::calculate_fee(&message, 1, &fee_structure, true), 2);
+        assert_eq!(
+            Bank::calculate_fee(&message, 1, &fee_structure, true, true,),
+            2
+        );
 
         secp_instruction1.data = vec![0];
         secp_instruction2.data = vec![10];
@@ -17920,7 +17959,10 @@ pub(crate) mod tests {
             Some(&key0),
         ))
         .unwrap();
-        assert_eq!(Bank::calculate_fee(&message, 1, &fee_structure, true), 11);
+        assert_eq!(
+            Bank::calculate_fee(&message, 1, &fee_structure, true, true,),
+            11
+        );
     }
 
     #[test]

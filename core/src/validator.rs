@@ -98,7 +98,7 @@ use {
         timing::timestamp,
     },
     solana_send_transaction_service::send_transaction_service,
-    solana_streamer::socket::SocketAddrSpace,
+    solana_streamer::{socket::SocketAddrSpace, streamer::StakedNodes},
     solana_vote_program::vote_state::VoteState,
     std::{
         collections::{HashMap, HashSet},
@@ -161,6 +161,7 @@ pub struct ValidatorConfig {
     pub no_os_memory_stats_reporting: bool,
     pub no_os_network_stats_reporting: bool,
     pub no_os_cpu_stats_reporting: bool,
+    pub no_os_disk_stats_reporting: bool,
     pub poh_pinned_cpu_core: usize,
     pub poh_hashes_per_batch: u64,
     pub account_indexes: AccountSecondaryIndexes,
@@ -223,6 +224,7 @@ impl Default for ValidatorConfig {
             no_os_memory_stats_reporting: true,
             no_os_network_stats_reporting: true,
             no_os_cpu_stats_reporting: true,
+            no_os_disk_stats_reporting: true,
             poh_pinned_cpu_core: poh_service::DEFAULT_PINNED_CPU_CORE,
             poh_hashes_per_batch: poh_service::DEFAULT_HASHES_PER_BATCH,
             account_indexes: AccountSecondaryIndexes::default(),
@@ -504,6 +506,7 @@ impl Validator {
             !config.no_os_memory_stats_reporting,
             !config.no_os_network_stats_reporting,
             !config.no_os_cpu_stats_reporting,
+            !config.no_os_disk_stats_reporting,
         ));
 
         let (poh_timing_point_sender, poh_timing_point_receiver) = unbounded();
@@ -757,12 +760,15 @@ impl Validator {
         };
         let poh_recorder = Arc::new(RwLock::new(poh_recorder));
 
+        let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
+
         let connection_cache = match use_quic {
             true => {
                 let mut connection_cache = ConnectionCache::new(tpu_connection_pool_size);
                 connection_cache
                     .update_client_certificate(&identity_keypair, node.info.gossip.ip())
                     .expect("Failed to update QUIC client certificates");
+                connection_cache.set_staked_nodes(&staked_nodes, &identity_keypair.pubkey());
                 Arc::new(connection_cache)
             }
             false => Arc::new(ConnectionCache::with_udp(tpu_connection_pool_size)),
@@ -880,14 +886,14 @@ impl Validator {
             Some(stats_reporter_sender.clone()),
             &exit,
         );
-        let serve_repair = Arc::new(RwLock::new(ServeRepair::new(cluster_info.clone())));
+        let serve_repair = ServeRepair::new(cluster_info.clone(), bank_forks.clone());
         let serve_repair_service = ServeRepairService::new(
-            &serve_repair,
-            Some(blockstore.clone()),
+            serve_repair,
+            blockstore.clone(),
             node.sockets.serve_repair,
             socket_addr_space,
             stats_reporter_sender,
-            &exit,
+            exit.clone(),
         );
 
         let waited_for_supermajority = if let Ok(waited) = wait_for_supermajority(
@@ -1025,6 +1031,7 @@ impl Validator {
             &identity_keypair,
             config.runtime_config.log_messages_bytes_limit,
             config.enable_quic_servers,
+            &staked_nodes,
         );
 
         datapoint_info!(
