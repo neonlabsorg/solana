@@ -12,6 +12,9 @@ use log::*;
 use postgres_openssl::MakeTlsConnector;
 use solana_sdk::account::WritableAccount;
 use std::collections::BTreeMap;
+use postgres::Row;
+use postgres::row::RowIndex;
+use postgres_types::FromSql;
 
 pub struct DumperDb {
     client: Mutex<Client>,
@@ -136,7 +139,8 @@ impl DumperDb {
 
         match stmt {
             Err(err) => {
-                return Err(DumperDbError::Custom { msg: "Failed to prepare get_account_at_slot statement".to_string() });
+                let msg = format!("Failed to prepare get_account_at_slot statement: {}", err);
+                return Err(DumperDbError::Custom { msg });
             },
 
             Ok(stmt) => {
@@ -149,8 +153,35 @@ impl DumperDb {
         }
     }
 
+    fn read_field<'a, T, I>(row: &'a Row, field_number: I, field_name: &str) -> Option<T>
+    where
+        I: RowIndex + std::fmt::Display,
+        T: FromSql<'a>
+    {
+        let value = row.try_get(field_number);
+        if let Err(err) = value {
+            error!(
+                "Failed to read '{}' field: {}",
+                field_name,
+                err,
+            );
+            return None;
+        }
+        let value: T = value.unwrap();
+        Some(value)
+    }
+
     pub fn load_account(&self, pubkey: &Pubkey, slot: Slot) -> Option<AccountSharedData> {
-        let mut client = self.client.lock().unwrap();
+        debug!("Loading account {}", pubkey.to_string());
+
+        let mut client = self.client.lock();
+        if let Err(err) = client {
+            let msg = format!("Failed to obtain dumper-db lock: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut client = client.unwrap();
         let pubkey_bytes = pubkey.to_bytes();
         let pubkeys = vec!(pubkey_bytes.as_slice());
         let result = client.query(
@@ -169,19 +200,42 @@ impl DumperDb {
 
         let rows = result.unwrap();
         if rows.len() != 1 {
-            panic!("More than one occurance of account found!");
+            error!("More than one occurrences of account {} found!", pubkey.to_string());
+            return None;
+        }
+        let row = &rows[0];
+
+        let lamports = Self::read_field::<i64, _>(row, 2, "lamports");
+        if lamports.is_none() {
+            return None;
         }
 
-        let row = &rows[0];
-        let lamports: i64 = row.try_get(2).unwrap();
-        let rent_epoch: i64 = row.try_get(4).unwrap();
+        let rent_epoch = Self::read_field::<i64, _>(row, 4, "rent_epoch");
+        if rent_epoch.is_none() {
+            return None;
+        }
+
+        let data = Self::read_field(row, 5, "data");
+        if data.is_none() {
+            return None;
+        }
+
+        let owner = Self::read_field::<&[u8], _>(row, 1, "owner");
+        if owner.is_none() {
+            return None;
+        }
+
+        let executable = Self::read_field::<bool, _>(row, 3, "executable");
+        if executable.is_none() {
+            return None;
+        }
 
         let account = AccountSharedData::create(
-            lamports as u64,
-            row.try_get(5).unwrap(),
-            Pubkey::new(row.try_get(1).unwrap()),
-            row.try_get(3).unwrap(),
-            rent_epoch as u64
+            lamports.unwrap() as u64,
+            data.unwrap(),
+            Pubkey::new(owner.unwrap()),
+            executable.unwrap(),
+            rent_epoch.unwrap() as u64
         );
 
         Some(account)
@@ -210,16 +264,27 @@ impl DumperDbBank {
         pubkey: &Pubkey,
         max_root: Option<Slot>
     ) -> Option<(AccountSharedData, Slot)> {
-        let mut account_cache = self.account_cache.lock().unwrap();
-        if let Some(account) = account_cache.get(pubkey) {
-            return Some((account.clone(), self.slot))
-        }
+        let account_cache = self.account_cache.lock();
+        match account_cache {
+            Err(err) => {
+                let msg = format!("Failed to obtain account-cache lock: {}", err);
+                error!("{}", msg);
+                return None;
+            }
+            Ok(mut account_cache) => {
+                if let Some(account) = account_cache.get(pubkey) {
+                    return Some((account.clone(), self.slot))
+                }
 
-        if let Some(account) = self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
-            account_cache.insert(*pubkey, account.clone());
-            return Some((account, self.slot))
-        }
+                if let Some(account) = self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
+                    account_cache.insert(*pubkey, account.clone());
+                    return Some((account, self.slot))
+                }
 
-        None
+                let msg = format!("Unable to read account {} from dumper-db", pubkey.to_string());
+                error!("{}", msg);
+                None
+            }
+        }
     }
 }
