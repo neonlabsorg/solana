@@ -9,6 +9,8 @@ use {
 };
 
 pub fn main() {
+    solana_logger::setup();
+
     let config = DumperDbConfig {
         port: None,
         connection_str: Some("host=localhost dbname=solana user=solana-user port=5432 password=solana-pass".to_string()),
