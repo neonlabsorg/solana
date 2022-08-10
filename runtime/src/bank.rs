@@ -174,6 +174,7 @@ use {
     crate::accounts_db::AccountsDb,
     crate::dumper_db::{ DumperDb, DumperDbBank },
     solana_sdk::sysvar::rent::Rent,
+    std::str::FromStr,
 };
 
 /// params to `verify_bank_hash`
@@ -2289,6 +2290,7 @@ impl Bank {
         let epoch_schedule: EpochSchedule = from_account(&epoch_schedule).unwrap();
         let rent = dumper_db.load_account(&sysvar::rent::id(), slot).unwrap();
         let rent: Rent = from_account(&rent).unwrap();
+        let block = dumper_db.get_block(slot).unwrap();
 
         let mut genesis_config = GenesisConfig::new(&[], &[]);
         genesis_config.cluster_type = cluster_type;
@@ -2300,6 +2302,9 @@ impl Bank {
         fields.rent_collector.rent = rent;
         fields.rent_collector.epoch_schedule = fields.epoch_schedule;
         fields.rent_collector.epoch = fields.epoch_schedule.get_epoch(fields.slot);
+
+        fields.hash = Hash::from_str(&block.blockhash).unwrap();
+        fields.block_height = block.block_height.unwrap() as u64;
 
         fields.ticks_per_slot = genesis_config.ticks_per_slot;
         fields.ns_per_slot = genesis_config.poh_config.target_tick_duration.as_nanos()

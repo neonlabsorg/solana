@@ -24,10 +24,11 @@ pub fn main() {
 
     let dumper_db = DumperDb::new(&config).unwrap();
     let bank = Bank::new_for_tracer(
-        0,
+        10,
         ClusterType::Development,
         Arc::new(dumper_db),
         0
     );
+
     return;
 }

@@ -19,6 +19,7 @@ use postgres_types::FromSql;
 pub struct DumperDb {
     client: Mutex<Client>,
     get_accounts_at_slot_statement: Statement,
+    get_block_statement: Statement,
 }
 
 impl std::fmt::Debug for DumperDb {
@@ -44,6 +45,13 @@ const DEFAULT_POSTGRES_PORT: u16 = 5432;
 pub enum DumperDbError {
     #[error("Custom error: ({msg})")]
     Custom{ msg: String },
+}
+
+pub struct Block {
+    pub slot: u64,
+    pub blockhash: String,
+    pub block_time: Option<i64>,
+    pub block_height: Option<i64>,
 }
 
 impl DumperDb {
@@ -130,27 +138,37 @@ impl DumperDb {
         }
     }
 
+    fn create_get_accounts_at_slot_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
+        let stmt = "SELECT * FROM get_accounts_at_slot($1, $2)";
+        let stmt = client.prepare(stmt);
+        stmt.map_err(|err| {
+            let msg = format!("Failed to prepare get_account_at_slot statement: {}", err);
+            DumperDbError::Custom { msg }
+        })
+    }
+
+    fn create_get_block_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
+        let stmt = "SELECT * FROM block WHERE slot = $1";
+        let stmt = client.prepare(stmt);
+        stmt.map_err(|err| {
+            let msg = format!("Failed to prepare get_block statement: {}", err);
+            DumperDbError::Custom { msg }
+        })
+    }
+
     pub fn new(config: &DumperDbConfig) -> Result<Self, DumperDbError> {
         info!("Creating Postgres Client...");
         let mut client = Self::connect_to_db(config)?;
 
-        let stmt = "SELECT * FROM get_accounts_at_slot($1, $2)";
-        let stmt = client.prepare(stmt);
+        let get_accounts_at_slot_statement = Self::create_get_accounts_at_slot_statement(&mut client)?;
+        let get_block_statement = Self::create_get_block_statement(&mut client)?;
 
-        match stmt {
-            Err(err) => {
-                let msg = format!("Failed to prepare get_account_at_slot statement: {}", err);
-                return Err(DumperDbError::Custom { msg });
-            },
-
-            Ok(stmt) => {
-                info!("Created Postgres Client.");
-                return Ok(Self {
-                    client: Mutex::new(client),
-                    get_accounts_at_slot_statement: stmt,
-                })
-            },
-        }
+        info!("Created Postgres Client.");
+        Ok(Self {
+            client: Mutex::new(client),
+            get_accounts_at_slot_statement,
+            get_block_statement,
+        })
     }
 
     fn read_field<'a, T, I>(row: &'a Row, field_number: I, field_name: &str) -> Option<T>
@@ -239,6 +257,54 @@ impl DumperDb {
         );
 
         Some(account)
+    }
+
+    pub fn get_block(&self, slot: Slot) -> Option<Block> {
+        debug!("Loading block {}", slot);
+        let mut client = self.client.lock();
+        if let Err(err) = client {
+            let msg = format!("Failed to obtain dumper-db lock: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut client = client.unwrap();
+        let result = client.query(
+            &self.get_block_statement,
+            &[&(slot as i64)],
+        );
+
+        if let Err(err) = result {
+            let msg = format!("Failed to load block: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let rows = result.unwrap();
+        if rows.len() > 1 {
+            error!("More than one occurrences of block {} found!", slot);
+            return None;
+        } else if rows.len() < 1 {
+            error!("Block {} not found!", slot);
+            return None;
+        }
+        let row = &rows[0];
+
+        let blockhash = Self::read_field::<String, _>(row, 1, "blockhash");
+        if blockhash.is_none() {
+            return None;
+        }
+        let blockhash = blockhash.unwrap();
+        info!("Blockhash: {}", &blockhash);
+
+        let block_time = Self::read_field::<i64, _>(row, 3, "block_time");
+        let block_height = Self::read_field::<i64, _>(row, 4, "block_height");
+        return Some(Block {
+            slot,
+            blockhash: blockhash,
+            block_time,
+            block_height,
+        })
     }
 }
 
