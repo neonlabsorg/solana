@@ -13,7 +13,7 @@ use {
         account::{ AccountSharedData, WritableAccount },
         clock::Slot, pubkey::Pubkey,
         message::Message as LegacyMessage,
-        //message::v0::Message as V0Message,
+        message::v0::Message as V0Message,
         signature::Signature,
         transaction::SanitizedTransaction,
         hash::Hash,
@@ -23,6 +23,7 @@ use {
 };
 use solana_sdk::instruction::CompiledInstruction;
 use solana_sdk::message::{MessageHeader, VersionedMessage};
+use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::transaction::{SanitizedVersionedTransaction, VersionedTransaction};
 
 pub struct DumperDb {
@@ -360,7 +361,7 @@ impl DumperDb {
         let legacy_message = rows[0].try_get(4);
         let v0_message = rows[0].try_get(5);
 
-        if legacy_message.is_ok() {
+        let versioned_message = if legacy_message.is_ok() {
             let legacy_message: DbTransactionMessage = legacy_message.unwrap();
             let legacy_message = LegacyMessage {
                 header: MessageHeader {
@@ -382,9 +383,43 @@ impl DumperDb {
                     })
                     .collect()
             };
+            Some(VersionedMessage::Legacy(legacy_message))
         } else if v0_message.is_ok() {
             let v0_message: DbTransactionMessageV0 = v0_message.unwrap();
+            let v0_message = V0Message {
+                header: MessageHeader {
+                    num_required_signatures: v0_message.header.num_required_signatures as u8,
+                    num_readonly_signed_accounts: v0_message.header.num_readonly_signed_accounts as u8,
+                    num_readonly_unsigned_accounts: v0_message.header.num_readonly_unsigned_accounts as u8,
+                },
+                account_keys: v0_message.account_keys
+                    .iter()
+                    .map(|entry| Pubkey::new(&entry))
+                    .collect(),
+                recent_blockhash: Hash::new(&v0_message.recent_blockhash),
+                instructions: v0_message.instructions
+                    .iter()
+                    .map(|instr| CompiledInstruction {
+                        program_id_index: instr.program_id_index as u8,
+                        accounts: instr.accounts.iter().map(|acc| *acc as u8).collect(),
+                        data: instr.data.clone(),
+                    })
+                    .collect(),
+                address_table_lookups: v0_message.address_table_lookups
+                    .iter()
+                    .map(|lookup| MessageAddressTableLookup {
+                        account_key: Pubkey::new(&lookup.account_key),
+                        writable_indexes: lookup.writable_indexes.iter().map(|idx| *idx as u8).collect(),
+                        readonly_indexes: lookup.readonly_indexes.iter().map(|idx| *idx as u8).collect(),
+                    })
+                    .collect(),
+            };
+            Some(VersionedMessage::V0(v0_message))
         } else {
+            return None
+        };
+
+        if versioned_message.is_none() {
             let msg = format!("Empty transaction record in db for signature: {}", signature);
             error!("{}", msg);
             return None;
