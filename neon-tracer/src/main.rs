@@ -44,9 +44,6 @@ pub fn main() {
     let (trx, accounts) = dumper_db.get_transaction_and_accounts(slots[0], &signature, &bank).unwrap();
     debug!("message: {:?}, accounts: {:?}", trx.message(), accounts);
 
-    let blockhashes = dumper_db.get_recent_blockhashes(22507, 12).unwrap();
-    debug!("Recent blockhashes: {:?}", blockhashes);
-
     bank.dumper_db().load_accounts_to_cache(&accounts);
     let simulation_result = bank.simulate_transaction(trx);
 

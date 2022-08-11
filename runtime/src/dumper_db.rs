@@ -755,7 +755,7 @@ impl DumperDbBank {
                 for (pubkey, account) in snapshot {
                     account_cache.insert(pubkey.clone(), account.clone());
                 }
-                debug!("Loading from snapshot finished");
+                debug!("Account cache: Loading finished");
                 true
             }
         }
