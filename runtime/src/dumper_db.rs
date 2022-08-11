@@ -24,7 +24,7 @@ use {
 use solana_sdk::instruction::CompiledInstruction;
 use solana_sdk::message::{MessageHeader, VersionedMessage};
 use solana_sdk::message::v0::MessageAddressTableLookup;
-use solana_sdk::transaction::{SanitizedVersionedTransaction, VersionedTransaction};
+use solana_sdk::transaction::{SanitizedVersionedTransaction, VersionedTransaction, AddressLoader};
 
 pub struct DumperDb {
     client: Mutex<Client>,
@@ -329,7 +329,12 @@ impl DumperDb {
         })
     }
 
-    pub fn get_transaction(&self, signature: &Signature) -> Option<(SanitizedTransaction, Vec<Slot>)> {
+    pub fn get_transaction(
+        &self,
+        signature: &Signature,
+        address_loader: impl AddressLoader
+    ) -> Option<(SanitizedTransaction, Vec<Slot>)> {
+
         debug!("Loading transaction {}", signature);
         let mut client = self.client.lock();
         if let Err(err) = client {
@@ -383,7 +388,9 @@ impl DumperDb {
                     })
                     .collect()
             };
+
             Some(VersionedMessage::Legacy(legacy_message))
+
         } else if v0_message.is_ok() {
             let v0_message: DbTransactionMessageV0 = v0_message.unwrap();
             let v0_message = V0Message {
@@ -414,7 +421,9 @@ impl DumperDb {
                     })
                     .collect(),
             };
+
             Some(VersionedMessage::V0(v0_message))
+
         } else {
             return None
         };
@@ -425,7 +434,67 @@ impl DumperDb {
             return None;
         }
 
-        return None;
+        let signatures = rows[0].try_get(6);
+        if signatures.is_err() {
+            let msg = format!("Unable to read transaction signatures {}", signature);
+            error!("{}", msg);
+            return None;
+        }
+        let signatures: Vec<Vec<u8>> = signatures.unwrap();
+        let versioned_transaction = VersionedTransaction {
+            signatures: signatures.iter().map(|sig| Signature::new(&sig)).collect(),
+            message: versioned_message.unwrap(),
+        };
+        let versioned_transaction = SanitizedVersionedTransaction::try_new(versioned_transaction);
+        if versioned_transaction.is_err() {
+            let msg = format!("Unable to create SanitizedVersionedTransaction {}", signature);
+            error!("{}", msg);
+            return None;
+        }
+
+        let is_vote = rows[0].try_get(2);
+        if is_vote.is_err() {
+            let msg = format!("Unable to read is_vote field for trx {}", signature);
+            error!("{}", msg);
+            return None;
+        }
+        let is_vote: bool = is_vote.unwrap();
+
+        let message_hash = rows[0].try_get(7);
+        if message_hash.is_err() {
+            let msg = format!("Unable to read message_hash {}", signature);
+            error!("{}", msg);
+            return None;
+        }
+        let message_hash: Vec<u8> = message_hash.unwrap();
+        let message_hash = Hash::new(&message_hash);
+
+        let result = SanitizedTransaction::try_new(
+            versioned_transaction.unwrap(),
+            message_hash,
+            is_vote,
+            address_loader
+        );
+
+        if result.is_err() {
+            let msg = format!("Failed to create SanitizedTransaction {}", signature);
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut slots = Vec::new();
+        for row in rows {
+            let slot = row.try_get(0);
+            if slot.is_err() {
+                let msg = format!("Failed to read slot for transaction {}", signature);
+                error!("{}", msg);
+                return None;
+            }
+            let slot: i64 = slot.unwrap();
+            slots.push(slot as u64);
+        }
+
+        return Some((result.unwrap(), slots));
     }
 }
 
