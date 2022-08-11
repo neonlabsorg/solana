@@ -1,6 +1,0 @@
-.buildkite
-.cache
-.git
-.github
-.travis
-target
