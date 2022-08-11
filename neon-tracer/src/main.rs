@@ -30,7 +30,7 @@ pub fn main() {
 
     let dumper_db = Arc::new(DumperDb::new(&config).unwrap());
 
-    let signature = hex::decode("1148d880712294e08fdb778133e6728618a86cfa2f0908674002851653696356a5634fb3c685c70a12b050d9660c37cc3231e07a30050a4a3dcabe781091b808").unwrap();
+    let signature = hex::decode("913b4284f6da45241272234cf90748da782e1106df34e0375fa8a8fba1f4c4649ea5af2266fa27fc9a39493b0e7059db1660f359dfea342ab8fb0c71e717890f").unwrap();
     let signature = Signature::new(&signature);
     let slots = dumper_db.get_transaction_slots(&signature).unwrap();
 

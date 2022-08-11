@@ -32,6 +32,7 @@ pub struct DumperDb {
     get_block_statement: Statement,
     get_transaction_statement: Statement,
     get_transaction_slots_statement: Statement,
+    get_pre_accounts_statement: Statement,
 }
 
 impl std::fmt::Debug for DumperDb {
@@ -151,7 +152,7 @@ impl DumperDb {
     }
 
     fn create_get_accounts_at_slot_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
-        let stmt = "SELECT * FROM get_accounts_at_slot($1, $2)";
+        let stmt = "SELECT lamports, data, owner, executable, rent_epoch FROM get_accounts_at_slot($1, $2)";
         let stmt = client.prepare(stmt);
         stmt.map_err(|err| {
             let msg = format!("Failed to prepare get_account_at_slot statement: {}", err);
@@ -186,6 +187,15 @@ impl DumperDb {
         })
     }
 
+    fn create_get_pre_accounts_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
+        let stmt = "SELECT lamports, data, owner, executable, rent_epoch, pubkey FROM get_pre_accounts($1);";
+        let stmt = client.prepare(stmt);
+        stmt.map_err(|err| {
+            let msg = format!("Failed to prepare get_pre_accounts statement: {}", err);
+            DumperDbError::Custom { msg }
+        })
+    }
+
     pub fn new(config: &DumperDbConfig) -> Result<Self, DumperDbError> {
         info!("Creating Postgres Client...");
         let mut client = Self::connect_to_db(config)?;
@@ -194,6 +204,7 @@ impl DumperDb {
         let get_block_statement = Self::create_get_block_statement(&mut client)?;
         let get_transaction_statement = Self::create_get_transaction_statement(&mut client)?;
         let get_transaction_slots_statement = Self::create_get_transaction_slots_statement(&mut client)?;
+        let get_pre_accounts_statement = Self::create_get_pre_accounts_statement(&mut client)?;
 
         info!("Created Postgres Client.");
         Ok(Self {
@@ -202,6 +213,7 @@ impl DumperDb {
             get_block_statement,
             get_transaction_statement,
             get_transaction_slots_statement,
+            get_pre_accounts_statement,
         })
     }
 
@@ -221,6 +233,43 @@ impl DumperDb {
         }
         let value: T = value.unwrap();
         Some(value)
+    }
+
+    fn read_account(row: &Row) -> Option<AccountSharedData> {
+        let lamports = Self::read_field::<i64, _>(row, 0, "lamports");
+        if lamports.is_none() {
+            return None;
+        }
+
+        let data = Self::read_field(row, 1, "data");
+        if data.is_none() {
+            return None;
+        }
+
+        let owner = Self::read_field::<&[u8], _>(row, 2, "owner");
+        if owner.is_none() {
+            return None;
+        }
+
+        let executable = Self::read_field::<bool, _>(row, 3, "executable");
+        if executable.is_none() {
+            return None;
+        }
+
+        let rent_epoch = Self::read_field::<i64, _>(row, 4, "rent_epoch");
+        if rent_epoch.is_none() {
+            return None;
+        }
+
+        let account = AccountSharedData::create(
+            lamports.unwrap() as u64,
+            data.unwrap(),
+            Pubkey::new(owner.unwrap()),
+            executable.unwrap(),
+            rent_epoch.unwrap() as u64
+        );
+
+        return Some(account);
     }
 
     pub fn load_account(&self, pubkey: &Pubkey, slot: Slot) -> Option<AccountSharedData> {
@@ -255,42 +304,8 @@ impl DumperDb {
             error!("More than one occurrences of account {} found!", pubkey.to_string());
             return None;
         }
-        let row = &rows[0];
 
-        let lamports = Self::read_field::<i64, _>(row, 2, "lamports");
-        if lamports.is_none() {
-            return None;
-        }
-
-        let rent_epoch = Self::read_field::<i64, _>(row, 4, "rent_epoch");
-        if rent_epoch.is_none() {
-            return None;
-        }
-
-        let data = Self::read_field(row, 5, "data");
-        if data.is_none() {
-            return None;
-        }
-
-        let owner = Self::read_field::<&[u8], _>(row, 1, "owner");
-        if owner.is_none() {
-            return None;
-        }
-
-        let executable = Self::read_field::<bool, _>(row, 3, "executable");
-        if executable.is_none() {
-            return None;
-        }
-
-        let account = AccountSharedData::create(
-            lamports.unwrap() as u64,
-            data.unwrap(),
-            Pubkey::new(owner.unwrap()),
-            executable.unwrap(),
-            rent_epoch.unwrap() as u64
-        );
-
-        Some(account)
+        Self::read_account(&rows[0])
     }
 
     pub fn get_block(&self, slot: Slot) -> Option<Block> {
@@ -543,6 +558,58 @@ impl DumperDb {
         }
 
         return Some(result.unwrap());
+    }
+
+    pub fn get_transaction_accounts(&self, transaction: &SanitizedTransaction) -> Option<BTreeMap<Pubkey, AccountSharedData>> {
+
+        debug!("Loading accounts for transaction {}", transaction.signature());
+        let mut client = self.client.lock();
+        if let Err(err) = client {
+            let msg = format!("Failed to obtain dumper-db lock: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut client = client.unwrap();
+        let signature = transaction.signature().as_ref().to_vec();
+        let result = client.query(
+            &self.get_pre_accounts_statement,
+            &[&signature],
+        );
+
+        if let Err(err) = result {
+            let msg = format!("Failed to load accounts: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let rows = result.unwrap();
+        if rows.len() == 0 {
+            let msg = format!("Accounts not found");
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut result = BTreeMap::new();
+
+        for row in rows {
+            let account = Self::read_account(&row);
+            if account.is_none() {
+                let msg = format!("Failed to read account");
+                error!("{}", msg);
+                return None;
+            }
+
+            if let Some(pubkey) = Self::read_field::<Vec<u8>, _>(&row, 5, "pubkey") {
+                result.insert(Pubkey::new(&pubkey), account.unwrap());
+            } else {
+                let msg = format!("Failed read account pubkey");
+                error!("{}", msg);
+                return None;
+            }
+        }
+
+        Some(result)
     }
 }
 
