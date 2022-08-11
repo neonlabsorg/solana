@@ -1,6 +1,10 @@
 use {
     crate::ancestors::Ancestors,
     log::*,
+    neon_dumper_plugin::postgres_client::postgres_client_transaction::{
+        DbTransactionMessage,
+        DbTransactionMessageV0
+    },
     openssl::ssl::{SslConnector, SslFiletype, SslMethod},
     postgres::{Client, NoTls, Row, row::RowIndex, Statement},
     postgres_openssl::MakeTlsConnector,
@@ -8,12 +12,18 @@ use {
     solana_sdk::{
         account::{ AccountSharedData, WritableAccount },
         clock::Slot, pubkey::Pubkey,
+        message::Message as LegacyMessage,
+        //message::v0::Message as V0Message,
         signature::Signature,
         transaction::SanitizedTransaction,
+        hash::Hash,
     },
     std::{ collections::BTreeMap, sync::{ Arc, Mutex }},
     thiserror::Error,
 };
+use solana_sdk::instruction::CompiledInstruction;
+use solana_sdk::message::{MessageHeader, VersionedMessage};
+use solana_sdk::transaction::{SanitizedVersionedTransaction, VersionedTransaction};
 
 pub struct DumperDb {
     client: Mutex<Client>,
@@ -347,7 +357,38 @@ impl DumperDb {
             return None;
         }
 
+        let legacy_message = rows[0].try_get(4);
+        let v0_message = rows[0].try_get(5);
 
+        if legacy_message.is_ok() {
+            let legacy_message: DbTransactionMessage = legacy_message.unwrap();
+            let legacy_message = LegacyMessage {
+                header: MessageHeader {
+                    num_required_signatures: legacy_message.header.num_required_signatures as u8,
+                    num_readonly_signed_accounts: legacy_message.header.num_readonly_signed_accounts as u8,
+                    num_readonly_unsigned_accounts: legacy_message.header.num_readonly_unsigned_accounts as u8,
+                },
+                account_keys: legacy_message.account_keys
+                    .iter()
+                    .map(|entry| Pubkey::new(&entry))
+                    .collect(),
+                recent_blockhash: Hash::new(&legacy_message.recent_blockhash),
+                instructions: legacy_message.instructions
+                    .iter()
+                    .map(|instr| CompiledInstruction {
+                        program_id_index: instr.program_id_index as u8,
+                        accounts: instr.accounts.iter().map(|acc| *acc as u8).collect(),
+                        data: instr.data.clone(),
+                    })
+                    .collect()
+            };
+        } else if v0_message.is_ok() {
+            let v0_message: DbTransactionMessageV0 = v0_message.unwrap();
+        } else {
+            let msg = format!("Empty transaction record in db for signature: {}", signature);
+            error!("{}", msg);
+            return None;
+        }
 
         return None;
     }
