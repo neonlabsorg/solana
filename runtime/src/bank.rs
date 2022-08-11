@@ -2286,6 +2286,7 @@ impl Bank {
         dumper_db: Arc<DumperDb>,
         accounts_data_size_initial: u64,
     ) -> Self {
+        let recent_blockhashes = dumper_db.get_recent_blockhashes(slot, 12).unwrap();
         let epoch_schedule = dumper_db.load_account(&sysvar::epoch_schedule::id(), slot).unwrap();
         let epoch_schedule: EpochSchedule = from_account(&epoch_schedule).unwrap();
         let rent = dumper_db.load_account(&sysvar::rent::id(), slot).unwrap();
@@ -2317,6 +2318,15 @@ impl Bank {
                 &genesis_config.poh_config.target_tick_duration,
                 fields.ticks_per_slot,
             );
+
+        for (current_slot, current_blockhash) in recent_blockhashes {
+            let current_blockhash = Hash::from_str(current_blockhash.as_str()).unwrap();
+            if current_slot == slot {
+                fields.hash = current_blockhash;
+            } else {
+                fields.blockhash_queue.register_hash(&current_blockhash, 0);
+            }
+        }
 
         let mut accounts_db = AccountsDb::default_for_tests();
         accounts_db.dumper_db = DumperDbBank::new(dumper_db, slot);
