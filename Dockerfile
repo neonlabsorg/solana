@@ -7,8 +7,7 @@ RUN cargo build --release \
     --bin solana-validator \
     --bin solana-faucet \
     --bin solana-genesis \
-    --bin solana-keygen \
-    --lib
+    --bin solana-keygen
 
 
 FROM ubuntu:20.04
@@ -22,11 +21,9 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/target/release/solana-keygen \
                     /opt/target/release/solana-validator \
                     /opt/target/release/solana-genesis \
-                    /opt/target/release/libsolana_geyser_plugin_postgres.so \
                     /opt/solana/bin/
 
 COPY --from=builder /opt/scripts/run.sh /opt/fetch-spl.sh /opt/solana/
-COPY accountsdb-plugin-config.json /opt
 
 ENV PATH /opt/solana/bin/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WORKDIR /opt/solana

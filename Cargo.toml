@@ -86,7 +86,7 @@ members = [
     "version",
     "watchtower",
     "zk-token-sdk",
-    "solana-accountsdb-plugin-postgres",
+    "neon-dumper-plugin",
     "neon-tracer"
 ]
 

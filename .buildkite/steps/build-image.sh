@@ -4,7 +4,6 @@ set -euo pipefail
 REVISION=$(git rev-parse HEAD)
 
 docker build -t neonlabsorg/solana:${REVISION} .
-docker build -t neonlabsorg/accountsdb:${REVISION} ./solana-accountsdb-plugin-postgres/scripts
 
 #if [[ ${BUILDKITE_BRANCH} == "master" ]]; then
 #    BUILDTYPE="stable"

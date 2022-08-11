@@ -1,6 +1,0 @@
-.dockerignore
-.buildkite*
-Dockerfile
-target*
-.idea*
-scripts*
