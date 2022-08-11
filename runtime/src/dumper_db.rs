@@ -7,7 +7,9 @@ use {
     postgres_types::FromSql,
     solana_sdk::{
         account::{ AccountSharedData, WritableAccount },
-        clock::Slot, pubkey::Pubkey
+        clock::Slot, pubkey::Pubkey,
+        signature::Signature,
+        transaction::SanitizedTransaction,
     },
     std::{ collections::BTreeMap, sync::{ Arc, Mutex }},
     thiserror::Error,
@@ -17,6 +19,7 @@ pub struct DumperDb {
     client: Mutex<Client>,
     get_accounts_at_slot_statement: Statement,
     get_block_statement: Statement,
+    get_transaction_statement: Statement,
 }
 
 impl std::fmt::Debug for DumperDb {
@@ -153,18 +156,29 @@ impl DumperDb {
         })
     }
 
+    fn create_get_transaction_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
+        let stmt = "SELECT * FROM transaction WHERE position($1 in signature) > 0;";
+        let stmt = client.prepare(stmt);
+        stmt.map_err(|err| {
+            let msg = format!("Failed to prepare get_transaction statement: {}", err);
+            DumperDbError::Custom { msg }
+        })
+    }
+
     pub fn new(config: &DumperDbConfig) -> Result<Self, DumperDbError> {
         info!("Creating Postgres Client...");
         let mut client = Self::connect_to_db(config)?;
 
         let get_accounts_at_slot_statement = Self::create_get_accounts_at_slot_statement(&mut client)?;
         let get_block_statement = Self::create_get_block_statement(&mut client)?;
+        let get_transaction_statement = Self::create_get_transaction_statement(&mut client)?;
 
         info!("Created Postgres Client.");
         Ok(Self {
             client: Mutex::new(client),
             get_accounts_at_slot_statement,
             get_block_statement,
+            get_transaction_statement,
         })
     }
 
@@ -302,6 +316,40 @@ impl DumperDb {
             block_time,
             block_height,
         })
+    }
+
+    pub fn get_transaction(&self, signature: &Signature) -> Option<(SanitizedTransaction, Vec<Slot>)> {
+        debug!("Loading transaction {}", signature);
+        let mut client = self.client.lock();
+        if let Err(err) = client {
+            let msg = format!("Failed to obtain dumper-db lock: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut client = client.unwrap();
+        let sign = signature.as_ref().to_vec();
+        let result = client.query(
+            &self.get_transaction_statement,
+            &[&sign],
+        );
+
+        if let Err(err) = result {
+            let msg = format!("Failed to load transaction: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let rows = result.unwrap();
+        if rows.len() == 0 {
+            let msg = format!("Transaction {} not found", signature);
+            error!("{}", msg);
+            return None;
+        }
+
+
+
+        return None;
     }
 }
 
