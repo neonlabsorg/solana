@@ -560,9 +560,9 @@ impl DumperDb {
         return Some(result.unwrap());
     }
 
-    pub fn get_transaction_accounts(&self, transaction: &SanitizedTransaction) -> Option<BTreeMap<Pubkey, AccountSharedData>> {
+    pub fn get_transaction_accounts(&self, signature: &Signature) -> Option<BTreeMap<Pubkey, AccountSharedData>> {
 
-        debug!("Loading accounts for transaction {}", transaction.signature());
+        debug!("Loading accounts for transaction {}", signature);
         let mut client = self.client.lock();
         if let Err(err) = client {
             let msg = format!("Failed to obtain dumper-db lock: {}", err);
@@ -571,7 +571,7 @@ impl DumperDb {
         }
 
         let mut client = client.unwrap();
-        let signature = transaction.signature().as_ref().to_vec();
+        let signature = signature.as_ref().to_vec();
         let result = client.query(
             &self.get_pre_accounts_statement,
             &[&signature],
@@ -601,7 +601,9 @@ impl DumperDb {
             }
 
             if let Some(pubkey) = Self::read_field::<Vec<u8>, _>(&row, 5, "pubkey") {
-                result.insert(Pubkey::new(&pubkey), account.unwrap());
+                let pubkey = Pubkey::new(&pubkey);
+                debug!("   Account loaded: {}", &pubkey);
+                result.insert(pubkey, account.unwrap());
             } else {
                 let msg = format!("Failed read account pubkey");
                 error!("{}", msg);
@@ -610,6 +612,26 @@ impl DumperDb {
         }
 
         Some(result)
+    }
+
+    pub fn get_transaction_and_accounts(
+        &self,
+        slot: Slot,
+        signature: &Signature,
+        address_loader: impl AddressLoader
+    ) -> Option<(SanitizedTransaction, BTreeMap<Pubkey, AccountSharedData>)> {
+        let trx = self.get_transaction(slot, signature, address_loader);
+        if trx.is_none() {
+            return None;
+        }
+        let trx = trx.unwrap();
+
+        let accounts = self.get_transaction_accounts(trx.signature());
+        if accounts.is_none() {
+            return None;
+        }
+
+        Some((trx, accounts.unwrap()))
     }
 }
 

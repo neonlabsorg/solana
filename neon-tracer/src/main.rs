@@ -41,6 +41,7 @@ pub fn main() {
         0
     );
 
-    let trx = dumper_db.get_transaction(slots[0], &signature, &bank).unwrap();
-    debug!("message: {:?}", trx.message());
+    let (trx, accounts) = dumper_db.get_transaction_and_accounts(slots[0], &signature, &bank).unwrap();
+    //let trx = dumper_db.get_transaction(slots[0], &signature, &bank).unwrap();
+    debug!("message: {:?}, accounts: {:?}", trx.message(), accounts);
 }
