@@ -9,6 +9,7 @@ use {
 use solana_sdk::signature::Signature;
 use std::str::FromStr;
 use hex;
+use log::*;
 
 
 pub fn main() {
@@ -25,18 +26,21 @@ pub fn main() {
         client_key: None,
     };
 
+
+
     let dumper_db = Arc::new(DumperDb::new(&config).unwrap());
+
+    let signature = hex::decode("1148d880712294e08fdb778133e6728618a86cfa2f0908674002851653696356a5634fb3c685c70a12b050d9660c37cc3231e07a30050a4a3dcabe781091b808").unwrap();
+    let signature = Signature::new(&signature);
+    let slots = dumper_db.get_transaction_slots(&signature).unwrap();
+
     let bank = Bank::new_for_tracer(
-        10,
+        slots[0],
         ClusterType::Development,
         dumper_db.clone(),
         0
     );
 
-    let signature = hex::decode("1148d880712294e08fdb778133e6728618a86cfa2f0908674002851653696356a5634fb3c685c70a12b050d9660c37cc3231e07a30050a4a3dcabe781091b808").unwrap();
-    let signature = Signature::new(&signature);
-    dumper_db.get_transaction(&signature, &bank);
-
-
-    return;
+    let trx = dumper_db.get_transaction(slots[0], &signature, &bank).unwrap();
+    debug!("message: {:?}", trx.message());
 }

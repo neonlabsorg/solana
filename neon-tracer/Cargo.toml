@@ -15,6 +15,7 @@ solana-logger = { path = "../logger", version = "=1.11.3" }
 solana-runtime = { path = "../runtime", version = "=1.11.3", features = ["tracer"] }
 solana-sdk = { path = "../sdk", version = "=1.11.3" }
 hex = "*"
+log = "0.4.17"
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.126"

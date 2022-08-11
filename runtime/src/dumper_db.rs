@@ -31,6 +31,7 @@ pub struct DumperDb {
     get_accounts_at_slot_statement: Statement,
     get_block_statement: Statement,
     get_transaction_statement: Statement,
+    get_transaction_slots_statement: Statement,
 }
 
 impl std::fmt::Debug for DumperDb {
@@ -168,10 +169,19 @@ impl DumperDb {
     }
 
     fn create_get_transaction_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
-        let stmt = "SELECT * FROM transaction WHERE position($1 in signature) > 0;";
+        let stmt = "SELECT * FROM transaction WHERE slot = $1 and position($2 in signature) > 0;";
         let stmt = client.prepare(stmt);
         stmt.map_err(|err| {
             let msg = format!("Failed to prepare get_transaction statement: {}", err);
+            DumperDbError::Custom { msg }
+        })
+    }
+
+    fn create_get_transaction_slots_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
+        let stmt = "SELECT slot FROM transaction WHERE position($1 in signature) > 0;";
+        let stmt = client.prepare(stmt);
+        stmt.map_err(|err| {
+            let msg = format!("Failed to prepare get_transaction_slots statement: {}", err);
             DumperDbError::Custom { msg }
         })
     }
@@ -183,6 +193,7 @@ impl DumperDb {
         let get_accounts_at_slot_statement = Self::create_get_accounts_at_slot_statement(&mut client)?;
         let get_block_statement = Self::create_get_block_statement(&mut client)?;
         let get_transaction_statement = Self::create_get_transaction_statement(&mut client)?;
+        let get_transaction_slots_statement = Self::create_get_transaction_slots_statement(&mut client)?;
 
         info!("Created Postgres Client.");
         Ok(Self {
@@ -190,6 +201,7 @@ impl DumperDb {
             get_accounts_at_slot_statement,
             get_block_statement,
             get_transaction_statement,
+            get_transaction_slots_statement,
         })
     }
 
@@ -329,13 +341,61 @@ impl DumperDb {
         })
     }
 
+    pub fn get_transaction_slots(
+        &self,
+        signature: &Signature
+    ) -> Option<Vec<Slot>> {
+        debug!("Loading transaction slots {}", signature);
+        let mut client = self.client.lock();
+        if let Err(err) = client {
+            let msg = format!("Failed to obtain dumper-db lock: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut client = client.unwrap();
+        let sign = signature.as_ref().to_vec();
+        let result = client.query(
+            &self.get_transaction_slots_statement,
+            &[&sign],
+        );
+
+        if let Err(err) = result {
+            let msg = format!("Failed to load transaction slots: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let rows = result.unwrap();
+        if rows.len() == 0 {
+            let msg = format!("Transaction {} not found", signature);
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut slots = Vec::new();
+        for row in rows {
+            let slot = row.try_get(0);
+            if slot.is_err() {
+                let msg = format!("Failed to read slot for transaction {}", signature);
+                error!("{}", msg);
+                return None;
+            }
+            let slot: i64 = slot.unwrap();
+            slots.push(slot as u64);
+        }
+
+        Some(slots)
+    }
+
     pub fn get_transaction(
         &self,
+        slot: Slot,
         signature: &Signature,
         address_loader: impl AddressLoader
-    ) -> Option<(SanitizedTransaction, Vec<Slot>)> {
+    ) -> Option<SanitizedTransaction> {
 
-        debug!("Loading transaction {}", signature);
+        debug!("Loading transaction {} from slot {}", signature, slot);
         let mut client = self.client.lock();
         if let Err(err) = client {
             let msg = format!("Failed to obtain dumper-db lock: {}", err);
@@ -347,7 +407,7 @@ impl DumperDb {
         let sign = signature.as_ref().to_vec();
         let result = client.query(
             &self.get_transaction_statement,
-            &[&sign],
+            &[&(slot as i64), &sign],
         );
 
         if let Err(err) = result {
@@ -482,19 +542,7 @@ impl DumperDb {
             return None;
         }
 
-        let mut slots = Vec::new();
-        for row in rows {
-            let slot = row.try_get(0);
-            if slot.is_err() {
-                let msg = format!("Failed to read slot for transaction {}", signature);
-                error!("{}", msg);
-                return None;
-            }
-            let slot: i64 = slot.unwrap();
-            slots.push(slot as u64);
-        }
-
-        return Some((result.unwrap(), slots));
+        return Some(result.unwrap());
     }
 }
 
