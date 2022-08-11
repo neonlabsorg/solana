@@ -2333,6 +2333,11 @@ impl Bank {
         )
     }
 
+    #[cfg(feature = "tracer")]
+    pub fn dumper_db(&self) -> &DumperDbBank {
+        &self.rc.accounts.accounts_db.dumper_db
+    }
+
     /// Return subset of bank fields representing serializable state
     pub(crate) fn get_fields_to_serialize<'a>(
         &'a self,

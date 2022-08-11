@@ -651,6 +651,54 @@ impl DumperDbBank {
         }
     }
 
+    pub fn take_cache_snapshot(&self) -> Option<BTreeMap<Pubkey, AccountSharedData>> {
+        let account_cache = self.account_cache.lock();
+        match account_cache {
+            Err(err) => {
+                let msg = format!("Failed to obtain account-cache lock: {}", err);
+                error!("{}", msg);
+                None
+            }
+            Ok(mut account_cache) => {
+                Some(account_cache.clone())
+            }
+        }
+    }
+
+    pub fn clear_cache(&self) -> bool {
+        let account_cache = self.account_cache.lock();
+        match account_cache {
+            Err(err) => {
+                let msg = format!("Failed to obtain account-cache lock: {}", err);
+                error!("{}", msg);
+                false
+            }
+            Ok(mut account_cache) => {
+                account_cache.clear();
+                debug!("Account cache cleared");
+                true
+            }
+        }
+    }
+
+    pub fn load_accounts_to_cache(&self, snapshot: &BTreeMap<Pubkey, AccountSharedData>) -> bool {
+        let account_cache = self.account_cache.lock();
+        match account_cache {
+            Err(err) => {
+                let msg = format!("Failed to obtain account-cache lock: {}", err);
+                error!("{}", msg);
+                false
+            }
+            Ok(mut account_cache) => {
+                for (pubkey, account) in snapshot {
+                    account_cache.insert(pubkey.clone(), account.clone());
+                }
+                debug!("Loading from snapshot finished");
+                true
+            }
+        }
+    }
+
     pub fn load_account(
         &self,
         ancestors: &Ancestors,
@@ -666,10 +714,12 @@ impl DumperDbBank {
             }
             Ok(mut account_cache) => {
                 if let Some(account) = account_cache.get(pubkey) {
+                    debug!("Account {} found in cache", pubkey);
                     return Some((account.clone(), self.slot))
                 }
 
                 if let Some(account) = self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
+                    debug!("Account {} loaded from DB", pubkey);
                     account_cache.insert(*pubkey, account.clone());
                     return Some((account, self.slot))
                 }

@@ -42,6 +42,14 @@ pub fn main() {
     );
 
     let (trx, accounts) = dumper_db.get_transaction_and_accounts(slots[0], &signature, &bank).unwrap();
-    //let trx = dumper_db.get_transaction(slots[0], &signature, &bank).unwrap();
     debug!("message: {:?}, accounts: {:?}", trx.message(), accounts);
+
+    bank.dumper_db().load_accounts_to_cache(&accounts);
+    let simulation_result = bank.simulate_transaction(trx);
+
+    debug!("Simulation finished:");
+    debug!("Simulation result: {:?}", simulation_result.result);
+    debug!("Log messages: {:?}", simulation_result.logs);
+    debug!("Units consumed: {}", simulation_result.units_consumed);
+
 }
