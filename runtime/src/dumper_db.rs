@@ -698,10 +698,22 @@ impl DumperDb {
 }
 
 #[derive(Debug, Default)]
+pub struct EnableLoading{
+    pub value: bool
+}
+
+impl EnableLoading {
+    pub fn set_enable_loading(&mut self, enable: bool) {
+        self.value = enable;
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct DumperDbBank {
     pub dumper_db: Option<Arc<DumperDb>>,
     pub slot: Slot,
     pub account_cache: Mutex<BTreeMap<Pubkey, AccountSharedData>>,
+    pub enable_loading_from_db: Mutex<EnableLoading>,
 }
 
 impl DumperDbBank {
@@ -710,6 +722,13 @@ impl DumperDbBank {
             dumper_db: Some(dumper_db),
             slot,
             account_cache: Mutex::new(BTreeMap::new()),
+            enable_loading_from_db: Mutex::new(EnableLoading{ value: true }),
+        }
+    }
+
+    pub fn set_enable_loading_from_dumper_db(&self, enable: bool) {
+        if let Ok(mut enable_loading) = self.enable_loading_from_db.lock() {
+            enable_loading.set_enable_loading(enable);
         }
     }
 
@@ -768,6 +787,10 @@ impl DumperDbBank {
         max_root: Option<Slot>
     ) -> Option<(AccountSharedData, Slot)> {
         let account_cache = self.account_cache.lock();
+        let enable_loading = self.enable_loading_from_db.lock();
+        if enable_loading.is_err() {
+            return None;
+        }
         match account_cache {
             Err(err) => {
                 let msg = format!("Failed to obtain account-cache lock: {}", err);
@@ -780,10 +803,12 @@ impl DumperDbBank {
                     return Some((account.clone(), self.slot))
                 }
 
-                if let Some(account) = self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
-                    debug!("Account {} loaded from DB", pubkey);
-                    account_cache.insert(*pubkey, account.clone());
-                    return Some((account, self.slot))
+                if enable_loading.unwrap().value {
+                    if let Some(account) = self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
+                        debug!("Account {} loaded from DB", pubkey);
+                        account_cache.insert(*pubkey, account.clone());
+                        return Some((account, self.slot))
+                    }
                 }
 
                 let msg = format!("Unable to read account {} from dumper-db", pubkey.to_string());

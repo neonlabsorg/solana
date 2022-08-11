@@ -47,6 +47,7 @@ pub fn main() {
     debug!("message: {:?}, accounts: {:?}", trx.message(), accounts);
 
     bank.dumper_db().load_accounts_to_cache(&accounts);
+    bank.set_enable_loading_from_dumper_db(false);
     let simulation_result = bank.simulate_transaction(trx);
 
     debug!("Simulation finished:");

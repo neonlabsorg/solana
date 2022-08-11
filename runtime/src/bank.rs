@@ -2333,7 +2333,7 @@ impl Bank {
         accounts_db.dumper_db = DumperDbBank::new(dumper_db, slot);
         let bank_rc = BankRc::new(Accounts::new_empty(accounts_db), fields.slot);
 
-        Bank::new_from_fields(
+        let bank = Bank::new_from_fields(
             bank_rc,
             &genesis_config,
             fields,
@@ -2341,12 +2341,20 @@ impl Bank {
             additional_builtins,
             false,
             accounts_data_size_initial,
-        )
+        );
+
+        bank.fill_missing_sysvar_cache_entries();
+        bank
     }
 
     #[cfg(feature = "tracer")]
     pub fn dumper_db(&self) -> &DumperDbBank {
         &self.rc.accounts.accounts_db.dumper_db
+    }
+
+    #[cfg(feature = "tracer")]
+    pub fn set_enable_loading_from_dumper_db(&self, enable: bool) {
+        self.rc.accounts.accounts_db.dumper_db.set_enable_loading_from_dumper_db(enable);
     }
 
     /// Return subset of bank fields representing serializable state
