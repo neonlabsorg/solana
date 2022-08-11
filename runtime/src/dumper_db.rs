@@ -33,6 +33,7 @@ pub struct DumperDb {
     get_transaction_statement: Statement,
     get_transaction_slots_statement: Statement,
     get_pre_accounts_statement: Statement,
+    get_recent_blockhashes_statement: Statement,
 }
 
 impl std::fmt::Debug for DumperDb {
@@ -196,6 +197,15 @@ impl DumperDb {
         })
     }
 
+    fn create_get_recent_blockhashes_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
+        let stmt = "SELECT * FROM get_recent_blockhashes($1, $2);";
+        let stmt = client.prepare(stmt);
+        stmt.map_err(|err| {
+            let msg = format!("Failed to prepare get_recent_blockhashes statement: {}", err);
+            DumperDbError::Custom { msg }
+        })
+    }
+
     pub fn new(config: &DumperDbConfig) -> Result<Self, DumperDbError> {
         info!("Creating Postgres Client...");
         let mut client = Self::connect_to_db(config)?;
@@ -205,6 +215,7 @@ impl DumperDb {
         let get_transaction_statement = Self::create_get_transaction_statement(&mut client)?;
         let get_transaction_slots_statement = Self::create_get_transaction_slots_statement(&mut client)?;
         let get_pre_accounts_statement = Self::create_get_pre_accounts_statement(&mut client)?;
+        let get_recent_blockhashes_statement = Self::create_get_recent_blockhashes_statement(&mut client)?;
 
         info!("Created Postgres Client.");
         Ok(Self {
@@ -214,6 +225,7 @@ impl DumperDb {
             get_transaction_statement,
             get_transaction_slots_statement,
             get_pre_accounts_statement,
+            get_recent_blockhashes_statement,
         })
     }
 
@@ -632,6 +644,56 @@ impl DumperDb {
         }
 
         Some((trx, accounts.unwrap()))
+    }
+
+    pub fn get_recent_blockhashes(&self, start_slot: Slot, num_hashes: u32) -> Option<BTreeMap<u64, String>> {
+        debug!("Loading {} recent blockhashes starting from slot {}", num_hashes, start_slot);
+        let mut client = self.client.lock();
+        if let Err(err) = client {
+            let msg = format!("Failed to obtain dumper-db lock: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut client = client.unwrap();
+        let result = client.query(
+            &self.get_recent_blockhashes_statement,
+            &[&(start_slot as i64), &(num_hashes as i32)],
+        );
+
+        if let Err(err) = result {
+            let msg = format!("Failed to get recent blockhashes: {}", err);
+            error!("{}", msg);
+            return None;
+        }
+
+        let rows = result.unwrap();
+        if rows.len() == 0 {
+            let msg = format!("Blockhashes not found");
+            error!("{}", msg);
+            return None;
+        }
+
+        let mut result = BTreeMap::new();
+        for row in rows {
+            let slot = Self::read_field::<i64, _>(&row, 0, "slot");
+            if slot.is_none() {
+                let msg = format!("Failed to read slot from row");
+                error!("{}", msg);
+                return None;
+            }
+
+            let blockhash = Self::read_field::<String, _>(&row, 1, "blockhash");
+            if blockhash.is_none() {
+                let msg = format!("Failed to read blockhash from row");
+                error!("{}", msg);
+                return None;
+            }
+
+            result.insert(slot.unwrap() as u64, blockhash.unwrap());
+        }
+
+        Some(result)
     }
 }
 
