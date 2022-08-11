@@ -2285,6 +2285,7 @@ impl Bank {
         cluster_type: ClusterType,
         dumper_db: Arc<DumperDb>,
         accounts_data_size_initial: u64,
+        additional_builtins: Option<&Builtins>,
     ) -> Self {
         let recent_blockhashes = dumper_db.get_recent_blockhashes(slot, 12).unwrap();
         let epoch_schedule = dumper_db.load_account(&sysvar::epoch_schedule::id(), slot).unwrap();
@@ -2337,7 +2338,7 @@ impl Bank {
             &genesis_config,
             fields,
             None,
-            None,
+            additional_builtins,
             false,
             accounts_data_size_initial,
         )

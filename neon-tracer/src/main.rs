@@ -10,6 +10,7 @@ use solana_sdk::signature::Signature;
 use std::str::FromStr;
 use hex;
 use log::*;
+use solana_ledger::builtins::get;
 
 
 pub fn main() {
@@ -38,7 +39,8 @@ pub fn main() {
         slots[0],
         ClusterType::Development,
         dumper_db.clone(),
-        0
+        0,
+        Some(&solana_ledger::builtins::get(true)),
     );
 
     let (trx, accounts) = dumper_db.get_transaction_and_accounts(slots[0], &signature, &bank).unwrap();
