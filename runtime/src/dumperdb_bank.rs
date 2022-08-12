@@ -115,18 +115,21 @@ impl DumperDbBank {
                     return Some((account.clone(), self.slot))
                 }
 
-                if enable_loading.unwrap().value {
-                    if let Ok(account) = self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
-                        debug!("Account {} loaded from DB", pubkey);
-                        account_cache.insert(*pubkey, account.clone());
-                        return Some((account, self.slot))
-                    }
-
-                    let msg = format!("Unable to read account {} from dumper-db", pubkey.to_string());
-                    error!("{}", msg);
+                if !enable_loading.unwrap().value {
+                    return None;
                 }
 
-                None
+                return match self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
+                    Ok(account) => {
+                        debug!("Account {} loaded from DB", pubkey);
+                        account_cache.insert(*pubkey, account.clone());
+                        Some((account, self.slot))
+                    }
+                    Err(err) => {
+                        error!("Unable to read account {} from dumper-db {:?}", pubkey, err);
+                        None
+                    }
+                }
             }
         }
     }
