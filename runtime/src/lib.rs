@@ -79,6 +79,7 @@ pub mod vote_sender_types;
 pub mod vote_transaction;
 pub mod waitable_condvar;
 pub mod dumper_db;
+pub mod neon_tracer_bank;
 
 #[macro_use]
 extern crate solana_metrics;
