@@ -36,6 +36,7 @@ pub struct DumperDb {
     get_transaction_slots_statement: Statement,
     get_pre_accounts_statement: Statement,
     get_recent_blockhashes_statement: Statement,
+    find_txn_slot_on_longest_branch_statement: Statement,
 }
 
 impl std::fmt::Debug for DumperDb {
@@ -88,6 +89,15 @@ pub enum DumperDbError {
 
     #[error("Failed create SanitizedTransaction {signature}: {err}")]
     FailedCreateSanitizedTransaction{ signature: Signature, err: solana_sdk::transaction::TransactionError },
+
+    #[error("Failed read recent blockhashes start_slot = {start_slot} num_hashes = {num_hashes}: {err}")]
+    FailedReadRecentBlockhashes{ start_slot: Slot, num_hashes: u32, err: postgres::Error },
+
+    #[error("Failed find transaction {signature} slot: {err}")]
+    FailedQueryTransactionSlot{ signature: Signature, err: postgres::Error },
+
+    #[error("Transaction {signature} slot not found")]
+    TransactionSlotNotFound{ signature: Signature },
 
     #[error("Custom error: ({msg})")]
     Custom{ msg: String },
@@ -238,6 +248,15 @@ impl DumperDb {
         })
     }
 
+    fn create_find_txn_slot_on_longest_branch_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
+        let stmt = "SELECT * FROM find_txn_slot_on_longest_branch($1);";
+        let stmt = client.prepare(stmt);
+        stmt.map_err(|err| {
+            let msg = format!("Failed to prepare find_txn_slot_on_longest_branch_statement statement: {}", err);
+            DumperDbError::Custom { msg }
+        })
+    }
+
     pub fn new(config: &DumperDbConfig) -> Result<Self, DumperDbError> {
         info!("Creating Postgres Client...");
         let mut client = Self::connect_to_db(config)?;
@@ -248,6 +267,7 @@ impl DumperDb {
         let get_transaction_slots_statement = Self::create_get_transaction_slots_statement(&mut client)?;
         let get_pre_accounts_statement = Self::create_get_pre_accounts_statement(&mut client)?;
         let get_recent_blockhashes_statement = Self::create_get_recent_blockhashes_statement(&mut client)?;
+        let find_txn_slot_on_longest_branch_statement = Self::create_find_txn_slot_on_longest_branch_statement(&mut client)?;
 
         info!("Created Postgres Client.");
         Ok(Self {
@@ -258,6 +278,7 @@ impl DumperDb {
             get_transaction_slots_statement,
             get_pre_accounts_statement,
             get_recent_blockhashes_statement,
+            find_txn_slot_on_longest_branch_statement,
         })
     }
 
@@ -387,51 +408,26 @@ impl DumperDb {
         })
     }
 
-    pub fn get_transaction_slots(
+    pub fn get_transaction_slot(
         &self,
         signature: &Signature
-    ) -> Option<Vec<Slot>> {
-        debug!("Loading transaction slots {}", signature);
-        let mut client = self.client.lock();
-        if let Err(err) = client {
-            let msg = format!("Failed to obtain dumper-db lock: {}", err);
-            error!("{}", msg);
-            return None;
-        }
+    ) -> Result<Slot, DumperDbError> {
 
-        let mut client = client.unwrap();
+        debug!("Find transaction slot {}", signature);
+        let mut client = self.lock_client()?;
+
         let sign = signature.as_ref().to_vec();
-        let result = client.query(
-            &self.get_transaction_slots_statement,
+        let rows = client.query(
+            &self.find_txn_slot_on_longest_branch_statement,
             &[&sign],
-        );
+        ).map_err(|err| DumperDbError::FailedQueryTransactionSlot{ signature: signature.clone(), err })?;
 
-        if let Err(err) = result {
-            let msg = format!("Failed to load transaction slots: {}", err);
-            error!("{}", msg);
-            return None;
+        if rows.len() != 1 {
+            return Err(DumperDbError::TransactionSlotNotFound { signature: signature.clone() });
         }
 
-        let rows = result.unwrap();
-        if rows.len() == 0 {
-            let msg = format!("Transaction {} not found", signature);
-            error!("{}", msg);
-            return None;
-        }
-
-        let mut slots = Vec::new();
-        for row in rows {
-            let slot = row.try_get(0);
-            if slot.is_err() {
-                let msg = format!("Failed to read slot for transaction {}", signature);
-                error!("{}", msg);
-                return None;
-            }
-            let slot: i64 = slot.unwrap();
-            slots.push(slot as u64);
-        }
-
-        Some(slots)
+        let slot: i64 = rows[0].try_get(0).map_err(|err| FailedReadField { name: "slot".to_string() })?;
+        Ok(slot as u64)
     }
 
     fn versioned_msg_from_legacy_db_msg(legacy_message: DbTransactionMessage) -> VersionedMessage {
@@ -589,54 +585,27 @@ impl DumperDb {
         Ok((trx, accounts))
     }
 
-    pub fn get_recent_blockhashes(&self, start_slot: Slot, num_hashes: u32) -> Option<BTreeMap<u64, String>> {
-        debug!("Loading {} recent blockhashes starting from slot {}", num_hashes, start_slot);
-        let mut client = self.client.lock();
-        if let Err(err) = client {
-            let msg = format!("Failed to obtain dumper-db lock: {}", err);
-            error!("{}", msg);
-            return None;
-        }
+    pub fn get_recent_blockhashes(&self, start_slot: Slot, num_hashes: u32) -> Result<BTreeMap<u64, String>, DumperDbError> {
 
-        let mut client = client.unwrap();
-        let result = client.query(
+        debug!("Loading {} recent blockhashes starting from slot {}", num_hashes, start_slot);
+        let mut client = self.lock_client()?;
+        let rows = client.query(
             &self.get_recent_blockhashes_statement,
             &[&(start_slot as i64), &(num_hashes as i32)],
-        );
-
-        if let Err(err) = result {
-            let msg = format!("Failed to get recent blockhashes: {}", err);
-            error!("{}", msg);
-            return None;
-        }
-
-        let rows = result.unwrap();
-        if rows.len() == 0 {
-            let msg = format!("Blockhashes not found");
-            error!("{}", msg);
-            return None;
-        }
+        ).map_err(|err| DumperDbError::FailedReadRecentBlockhashes{ start_slot, num_hashes, err })?;
 
         let mut result = BTreeMap::new();
         for row in rows {
-            let slot = Self::read_field::<i64, _>(&row, 0, "slot");
-            if slot.is_none() {
-                let msg = format!("Failed to read slot from row");
-                error!("{}", msg);
-                return None;
-            }
+            let slot: i64 = row.try_get(0)
+                .map_err(|err| FailedReadField { name: "slot".to_string() })?;
 
-            let blockhash = Self::read_field::<String, _>(&row, 1, "blockhash");
-            if blockhash.is_none() {
-                let msg = format!("Failed to read blockhash from row");
-                error!("{}", msg);
-                return None;
-            }
+            let blockhash: String = row.try_get(1)
+                .map_err(|err| FailedReadField { name: "blockhash".to_string() })?;
 
-            result.insert(slot.unwrap() as u64, blockhash.unwrap());
+            result.insert(slot as u64, blockhash);
         }
 
-        Some(result)
+        Ok(result)
     }
 }
 
@@ -752,10 +721,11 @@ impl DumperDbBank {
                         account_cache.insert(*pubkey, account.clone());
                         return Some((account, self.slot))
                     }
+
+                    let msg = format!("Unable to read account {} from dumper-db", pubkey.to_string());
+                    error!("{}", msg);
                 }
 
-                let msg = format!("Unable to read account {} from dumper-db", pubkey.to_string());
-                error!("{}", msg);
                 None
             }
         }
