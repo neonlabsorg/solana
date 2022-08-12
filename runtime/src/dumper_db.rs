@@ -99,6 +99,12 @@ pub enum DumperDbError {
     #[error("Transaction {signature} slot not found")]
     TransactionSlotNotFound{ signature: Signature },
 
+    #[error("Failed query block slot={slot}: {err}")]
+    FailedQueryBlock{ slot: Slot, err: postgres::Error },
+
+    #[error("Only one block expected")]
+    NotOneBlock,
+
     #[error("Custom error: ({msg})")]
     Custom{ msg: String },
 }
@@ -360,49 +366,27 @@ impl DumperDb {
         Self::read_account(&rows[0])
     }
 
-    pub fn get_block(&self, slot: Slot) -> Option<Block> {
-        debug!("Loading block {}", slot);
-        let mut client = self.client.lock();
-        if let Err(err) = client {
-            let msg = format!("Failed to obtain dumper-db lock: {}", err);
-            error!("{}", msg);
-            return None;
-        }
+    pub fn get_block(&self, slot: Slot) -> Result<Block, DumperDbError> {
 
-        let mut client = client.unwrap();
-        let result = client.query(
+        debug!("Loading block {}", slot);
+        let mut client = self.lock_client()?;
+        let rows = client.query(
             &self.get_block_statement,
             &[&(slot as i64)],
-        );
+        ).map_err(|err| DumperDbError::FailedQueryBlock { slot, err })?;
 
-        if let Err(err) = result {
-            let msg = format!("Failed to load block: {}", err);
-            error!("{}", msg);
-            return None;
-        }
-
-        let rows = result.unwrap();
-        if rows.len() > 1 {
-            error!("More than one occurrences of block {} found!", slot);
-            return None;
-        } else if rows.len() < 1 {
-            error!("Block {} not found!", slot);
-            return None;
+        if rows.len() != 1 {
+            return Err(DumperDbError::NotOneBlock)
         }
         let row = &rows[0];
 
-        let blockhash = Self::read_field::<String, _>(row, 1, "blockhash");
-        if blockhash.is_none() {
-            return None;
-        }
-        let blockhash = blockhash.unwrap();
-        info!("Blockhash: {}", &blockhash);
+        let blockhash: String = row.try_get(1).map_err(|err| FailedReadField { name: "blockhash".to_string() })?;
+        let block_time = row.try_get(3).map_or_else(|_| None, |value| Some(value));
+        let block_height = row.try_get(4).map_or_else(|_| None, |value| Some(value));
 
-        let block_time = Self::read_field::<i64, _>(row, 3, "block_time");
-        let block_height = Self::read_field::<i64, _>(row, 4, "block_height");
-        return Some(Block {
+        return Ok(Block {
             slot,
-            blockhash: blockhash,
+            blockhash,
             block_time,
             block_height,
         })
