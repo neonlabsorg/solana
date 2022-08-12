@@ -1,4 +1,5 @@
 use {
+    clap::{ App, Arg, AppSettings, crate_description, crate_name, SubCommand },
     solana_runtime::{
         bank::{ Bank, TransactionSimulationResult },
         dumper_db::{ DumperDb, DumperDbConfig, DumperDbError },
@@ -14,6 +15,18 @@ use hex;
 use log::*;
 use solana_ledger::builtins::get;
 
+macro_rules! neon_tracer_pkg_version {
+    () => ( env!("CARGO_PKG_VERSION") )
+}
+
+macro_rules! neon_tracer_revision {
+    () => ( env!("NEON_TRACER_REVISION") )
+}
+
+macro_rules! version_string {
+    () => ( concat!("Neon-tracer/v", neon_tracer_pkg_version!(), "-", neon_tracer_revision!()) )
+}
+
 #[derive(Debug, Error)]
 pub enum TracerError {
     #[error("Failed to create DumperDb")]
@@ -27,6 +40,13 @@ pub enum TracerError {
 
     #[error("Failed to query transaction and accounts {signature}: {err}")]
     FailedQueryTransactionAccounts{ signature: Signature, err: DumperDbError },
+}
+
+// Return an error if string cannot be parsed as a H160 address
+fn is_valid_signature<T>(string: T) -> Result<(), String> where T: AsRef<str>,
+{
+    Signature::from_str(string.as_ref()).map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 pub fn create_dumperdb(db_config: &DumperDbConfig) -> Result<Arc<DumperDb>, TracerError> {
@@ -63,9 +83,33 @@ pub fn replay_transaction(
 pub fn main() {
     solana_logger::setup();
 
+    let app_matches = App::new(crate_name!())
+        .about(crate_description!())
+        .version(version_string!())
+        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .arg(Arg::with_name("connection-str")
+                .short("c")
+                .long("connection-str")
+                .value_name("CONN_STR")
+                .takes_value(true)
+                .global(true)
+                .help("Dumper DB connection string"))
+        .subcommand(SubCommand::with_name("replay")
+            .about("Replay Solana transaction given signature")
+            .arg(
+                Arg::with_name("signature")
+                    .value_name("SIGNATURE")
+                    .takes_value(true)
+                    .index(1)
+                    .required(true)
+                    .validator(is_valid_signature)
+                    .help("Signature of Solana transaction")
+            ))
+        .get_matches();
+
     let config = DumperDbConfig {
         port: None,
-        connection_str: Some("host=localhost dbname=solana user=solana-user port=5432 password=solana-pass".to_string()),
+        connection_str: Some(app_matches.value_of("connection-str").unwrap().to_string()),
         host: None,
         user: None,
         use_ssl: None,
@@ -76,16 +120,21 @@ pub fn main() {
 
     let dumper_db = create_dumperdb(&config).unwrap();
 
-    let signature = hex::decode("913b4284f6da45241272234cf90748da782e1106df34e0375fa8a8fba1f4c4649ea5af2266fa27fc9a39493b0e7059db1660f359dfea342ab8fb0c71e717890f").unwrap();
-    let signature = Signature::new(&signature);
-    let simulation_result = replay_transaction(
-        dumper_db,
-        ClusterType::Development,
-        &signature,
-        true).unwrap();
+    let (sub_command, sub_matches) = app_matches.subcommand();
+    match (sub_command, sub_matches) {
+        ("replay", Some(arg_matches)) => {
+            let signature = Signature::from_str(arg_matches.value_of("signature").unwrap()).unwrap();
+            let simulation_result = replay_transaction(
+                dumper_db,
+                ClusterType::Development,
+                &signature,
+                true).unwrap();
 
-    debug!("Simulation finished:");
-    debug!("Simulation result: {:?}", simulation_result.result);
-    debug!("Log messages: {:?}", simulation_result.logs);
-    debug!("Units consumed: {}", simulation_result.units_consumed);
+            debug!("Simulation finished:");
+            debug!("Simulation result: {:?}", simulation_result.result);
+            debug!("Log messages: {:?}", simulation_result.logs);
+            debug!("Units consumed: {}", simulation_result.units_consumed);
+        }
+        (_, _) => {}
+    }
 }
