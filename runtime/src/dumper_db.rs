@@ -1,3 +1,4 @@
+use std::sync::{LockResult, MutexGuard};
 use {
     crate::ancestors::Ancestors,
     log::*,
@@ -25,6 +26,7 @@ use solana_sdk::instruction::CompiledInstruction;
 use solana_sdk::message::{MessageHeader, VersionedMessage};
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::transaction::{SanitizedVersionedTransaction, VersionedTransaction, AddressLoader};
+use crate::dumper_db::DumperDbError::{DbLockError, FailedReadField, LoadAccError, TooManyAccs};
 
 pub struct DumperDb {
     client: Mutex<Client>,
@@ -57,6 +59,36 @@ const DEFAULT_POSTGRES_PORT: u16 = 5432;
 
 #[derive(Error, Debug)]
 pub enum DumperDbError {
+    #[error("DB lock error: {msg}")]
+    DbLockError{ msg: String },
+
+    #[error("Error loading account {pubkey} (slot {slot}): {err}")]
+    LoadAccError{ pubkey: Pubkey, slot: Slot, err: postgres::Error },
+
+    #[error("More than one occurence of account {pubkey} found in slot {slot}")]
+    TooManyAccs{ pubkey: Pubkey, slot: Slot },
+
+    #[error("Failed to read field {name}")]
+    FailedReadField{ name: String },
+
+    #[error("Failed get pre-accounts {signature}: {err}")]
+    FailedGetPreAccounts{ signature: Signature, err: postgres::Error },
+
+    #[error("Failed get transaction {signature} at slot {slot}: {err}")]
+    GetTransactionError{ signature: Signature, slot: Slot, err: postgres::Error },
+
+    #[error("Transaction {signature} not found at slot {slot}")]
+    TransactionNotFound{ signature: Signature, slot: Slot },
+
+    #[error("Failed read message for transaction {signature} slot {slot}")]
+    FailedReadMessage{ signature: Signature, slot: Slot },
+
+    #[error("Failed create VersionedTransaction {signature}: {err}")]
+    FailedCreateVersionedTransaction{ signature: Signature, err: solana_sdk::sanitize::SanitizeError },
+
+    #[error("Failed create SanitizedTransaction {signature}: {err}")]
+    FailedCreateSanitizedTransaction{ signature: Signature, err: solana_sdk::transaction::TransactionError },
+
     #[error("Custom error: ({msg})")]
     Custom{ msg: String },
 }
@@ -198,7 +230,7 @@ impl DumperDb {
     }
 
     fn create_get_recent_blockhashes_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
-        let stmt = "SELECT * FROM get_recent_blockhashes($1, $2);";
+        let stmt = "SELECT * FROM get_recent_blockhashes2($1, $2);";
         let stmt = client.prepare(stmt);
         stmt.map_err(|err| {
             let msg = format!("Failed to prepare get_recent_blockhashes statement: {}", err);
@@ -230,9 +262,9 @@ impl DumperDb {
     }
 
     fn read_field<'a, T, I>(row: &'a Row, field_number: I, field_name: &str) -> Option<T>
-    where
-        I: RowIndex + std::fmt::Display,
-        T: FromSql<'a>
+        where
+            I: RowIndex + std::fmt::Display,
+            T: FromSql<'a>
     {
         let value = row.try_get(field_number);
         if let Err(err) = value {
@@ -247,74 +279,61 @@ impl DumperDb {
         Some(value)
     }
 
-    fn read_account(row: &Row) -> Option<AccountSharedData> {
-        let lamports = Self::read_field::<i64, _>(row, 0, "lamports");
-        if lamports.is_none() {
-            return None;
-        }
+    fn read_account(row: &Row) -> Result<AccountSharedData, DumperDbError> {
+        let lamports: i64 = row.try_get(0).map_err(|err| FailedReadField {
+            name: "lamports".to_string()
+        })?;
 
-        let data = Self::read_field(row, 1, "data");
-        if data.is_none() {
-            return None;
-        }
+        let data = row.try_get(1).map_err(|err| FailedReadField {
+            name: "data".to_string()
+        })?;
 
-        let owner = Self::read_field::<&[u8], _>(row, 2, "owner");
-        if owner.is_none() {
-            return None;
-        }
+        let owner: Vec<u8>= row.try_get(2).map_err(|err| FailedReadField {
+            name: "owner".to_string()
+        })?;
 
-        let executable = Self::read_field::<bool, _>(row, 3, "executable");
-        if executable.is_none() {
-            return None;
-        }
+        let executable = row.try_get(3).map_err(|err| FailedReadField {
+            name: "executable".to_string()
+        })?;
 
-        let rent_epoch = Self::read_field::<i64, _>(row, 4, "rent_epoch");
-        if rent_epoch.is_none() {
-            return None;
-        }
+        let rent_epoch: i64 = row.try_get(4).map_err(|err| FailedReadField {
+            name: "rent_epoch".to_string()
+        })?;
 
         let account = AccountSharedData::create(
-            lamports.unwrap() as u64,
-            data.unwrap(),
-            Pubkey::new(owner.unwrap()),
-            executable.unwrap(),
-            rent_epoch.unwrap() as u64
+            lamports as u64,
+            data,
+            Pubkey::new(&owner),
+            executable,
+            rent_epoch as u64
         );
 
-        return Some(account);
+        Ok(account)
     }
 
-    pub fn load_account(&self, pubkey: &Pubkey, slot: Slot) -> Option<AccountSharedData> {
-        debug!("Loading account {}", pubkey.to_string());
-
-        let mut client = self.client.lock();
-        if let Err(err) = client {
+    fn lock_client(&self) -> Result<MutexGuard<Client>, DumperDbError> {
+        self.client.lock().map_err(|err| {
             let msg = format!("Failed to obtain dumper-db lock: {}", err);
-            error!("{}", msg);
-            return None;
-        }
+            DbLockError { msg }
+        })
+    }
 
-        let mut client = client.unwrap();
+    pub fn load_account(&self, pubkey: &Pubkey, slot: Slot) -> Result<AccountSharedData, DumperDbError> {
+        debug!("Loading account {}", pubkey.to_string());
+        let mut client = self.lock_client()?;
+
         let pubkey_bytes = pubkey.to_bytes();
         let pubkeys = vec!(pubkey_bytes.as_slice());
-        let result = client.query(
+        let rows = client.query(
             &self.get_accounts_at_slot_statement,
             &[
                 &pubkeys,
                 &(slot as i64),
             ]
-        );
+        ).map_err(|err| LoadAccError { pubkey: pubkey.clone(), slot, err })?;
 
-        if let Err(err) = result {
-            let msg = format!("Failed to load account: {}", err);
-            error!("{}", msg);
-            return None;
-        }
-
-        let rows = result.unwrap();
         if rows.len() != 1 {
-            error!("More than one occurrences of account {} found!", pubkey.to_string());
-            return None;
+            return Err(TooManyAccs { pubkey: pubkey.clone(), slot });
         }
 
         Self::read_account(&rows[0])
@@ -415,215 +434,148 @@ impl DumperDb {
         Some(slots)
     }
 
+    fn versioned_msg_from_legacy_db_msg(legacy_message: DbTransactionMessage) -> VersionedMessage {
+        VersionedMessage::Legacy(LegacyMessage {
+            header: MessageHeader {
+                num_required_signatures: legacy_message.header.num_required_signatures as u8,
+                num_readonly_signed_accounts: legacy_message.header.num_readonly_signed_accounts as u8,
+                num_readonly_unsigned_accounts: legacy_message.header.num_readonly_unsigned_accounts as u8,
+            },
+            account_keys: legacy_message.account_keys
+                .iter()
+                .map(|entry| Pubkey::new(&entry))
+                .collect(),
+            recent_blockhash: Hash::new(&legacy_message.recent_blockhash),
+            instructions: legacy_message.instructions
+                .iter()
+                .map(|instr| CompiledInstruction {
+                    program_id_index: instr.program_id_index as u8,
+                    accounts: instr.accounts.iter().map(|acc| *acc as u8).collect(),
+                    data: instr.data.clone(),
+                })
+                .collect()
+        })
+    }
+
+    fn versioned_msg_from_v0_db_msg(v0_message: DbTransactionMessageV0) -> VersionedMessage {
+        VersionedMessage::V0(V0Message {
+            header: MessageHeader {
+                num_required_signatures: v0_message.header.num_required_signatures as u8,
+                num_readonly_signed_accounts: v0_message.header.num_readonly_signed_accounts as u8,
+                num_readonly_unsigned_accounts: v0_message.header.num_readonly_unsigned_accounts as u8,
+            },
+            account_keys: v0_message.account_keys
+                .iter()
+                .map(|entry| Pubkey::new(&entry))
+                .collect(),
+            recent_blockhash: Hash::new(&v0_message.recent_blockhash),
+            instructions: v0_message.instructions
+                .iter()
+                .map(|instr| CompiledInstruction {
+                    program_id_index: instr.program_id_index as u8,
+                    accounts: instr.accounts.iter().map(|acc| *acc as u8).collect(),
+                    data: instr.data.clone(),
+                })
+                .collect(),
+            address_table_lookups: v0_message.address_table_lookups
+                .iter()
+                .map(|lookup| MessageAddressTableLookup {
+                    account_key: Pubkey::new(&lookup.account_key),
+                    writable_indexes: lookup.writable_indexes.iter().map(|idx| *idx as u8).collect(),
+                    readonly_indexes: lookup.readonly_indexes.iter().map(|idx| *idx as u8).collect(),
+                })
+                .collect(),
+        })
+    }
+
     pub fn get_transaction(
         &self,
         slot: Slot,
         signature: &Signature,
         address_loader: impl AddressLoader
-    ) -> Option<SanitizedTransaction> {
+    ) -> Result<SanitizedTransaction, DumperDbError> {
 
         debug!("Loading transaction {} from slot {}", signature, slot);
-        let mut client = self.client.lock();
-        if let Err(err) = client {
-            let msg = format!("Failed to obtain dumper-db lock: {}", err);
-            error!("{}", msg);
-            return None;
-        }
+        let mut client = self.lock_client()?;
 
-        let mut client = client.unwrap();
         let sign = signature.as_ref().to_vec();
-        let result = client.query(
+        let rows = client.query(
             &self.get_transaction_statement,
             &[&(slot as i64), &sign],
-        );
+        ).map_err(|err| {
+            DumperDbError::GetTransactionError{ signature: signature.clone(), slot, err }
+        })?;
 
-        if let Err(err) = result {
-            let msg = format!("Failed to load transaction: {}", err);
-            error!("{}", msg);
-            return None;
-        }
-
-        let rows = result.unwrap();
         if rows.len() == 0 {
-            let msg = format!("Transaction {} not found", signature);
-            error!("{}", msg);
-            return None;
+            return Err(DumperDbError::TransactionNotFound{ signature: signature.clone(), slot });
         }
 
         let legacy_message = rows[0].try_get(4);
         let v0_message = rows[0].try_get(5);
 
         let versioned_message = if legacy_message.is_ok() {
-            let legacy_message: DbTransactionMessage = legacy_message.unwrap();
-            let legacy_message = LegacyMessage {
-                header: MessageHeader {
-                    num_required_signatures: legacy_message.header.num_required_signatures as u8,
-                    num_readonly_signed_accounts: legacy_message.header.num_readonly_signed_accounts as u8,
-                    num_readonly_unsigned_accounts: legacy_message.header.num_readonly_unsigned_accounts as u8,
-                },
-                account_keys: legacy_message.account_keys
-                    .iter()
-                    .map(|entry| Pubkey::new(&entry))
-                    .collect(),
-                recent_blockhash: Hash::new(&legacy_message.recent_blockhash),
-                instructions: legacy_message.instructions
-                    .iter()
-                    .map(|instr| CompiledInstruction {
-                        program_id_index: instr.program_id_index as u8,
-                        accounts: instr.accounts.iter().map(|acc| *acc as u8).collect(),
-                        data: instr.data.clone(),
-                    })
-                    .collect()
-            };
-
-            Some(VersionedMessage::Legacy(legacy_message))
-
+            Some(Self::versioned_msg_from_legacy_db_msg(legacy_message.unwrap()))
         } else if v0_message.is_ok() {
-            let v0_message: DbTransactionMessageV0 = v0_message.unwrap();
-            let v0_message = V0Message {
-                header: MessageHeader {
-                    num_required_signatures: v0_message.header.num_required_signatures as u8,
-                    num_readonly_signed_accounts: v0_message.header.num_readonly_signed_accounts as u8,
-                    num_readonly_unsigned_accounts: v0_message.header.num_readonly_unsigned_accounts as u8,
-                },
-                account_keys: v0_message.account_keys
-                    .iter()
-                    .map(|entry| Pubkey::new(&entry))
-                    .collect(),
-                recent_blockhash: Hash::new(&v0_message.recent_blockhash),
-                instructions: v0_message.instructions
-                    .iter()
-                    .map(|instr| CompiledInstruction {
-                        program_id_index: instr.program_id_index as u8,
-                        accounts: instr.accounts.iter().map(|acc| *acc as u8).collect(),
-                        data: instr.data.clone(),
-                    })
-                    .collect(),
-                address_table_lookups: v0_message.address_table_lookups
-                    .iter()
-                    .map(|lookup| MessageAddressTableLookup {
-                        account_key: Pubkey::new(&lookup.account_key),
-                        writable_indexes: lookup.writable_indexes.iter().map(|idx| *idx as u8).collect(),
-                        readonly_indexes: lookup.readonly_indexes.iter().map(|idx| *idx as u8).collect(),
-                    })
-                    .collect(),
-            };
-
-            Some(VersionedMessage::V0(v0_message))
-
+            Some(Self::versioned_msg_from_v0_db_msg(v0_message.unwrap()))
         } else {
-            return None
-        };
+            None
+        }.map_or_else(
+            || Err(DumperDbError::FailedReadMessage{ signature: signature.clone(), slot }),
+            |msg| Ok(msg)
+        )?;
 
-        if versioned_message.is_none() {
-            let msg = format!("Empty transaction record in db for signature: {}", signature);
-            error!("{}", msg);
-            return None;
-        }
+        let signatures:Vec<Vec<u8>> = rows[0].try_get(6)
+            .map_err(|err| FailedReadField { name: "signatures".to_string() })?;
 
-        let signatures = rows[0].try_get(6);
-        if signatures.is_err() {
-            let msg = format!("Unable to read transaction signatures {}", signature);
-            error!("{}", msg);
-            return None;
-        }
-        let signatures: Vec<Vec<u8>> = signatures.unwrap();
-        let versioned_transaction = VersionedTransaction {
-            signatures: signatures.iter().map(|sig| Signature::new(&sig)).collect(),
-            message: versioned_message.unwrap(),
-        };
-        let versioned_transaction = SanitizedVersionedTransaction::try_new(versioned_transaction);
-        if versioned_transaction.is_err() {
-            let msg = format!("Unable to create SanitizedVersionedTransaction {}", signature);
-            error!("{}", msg);
-            return None;
-        }
+        let versioned_transaction = SanitizedVersionedTransaction::try_new(
+            VersionedTransaction {
+                signatures: signatures.iter().map(|sig| Signature::new(&sig)).collect(),
+                message: versioned_message,
+            })
+            .map_err(|err| DumperDbError::FailedCreateVersionedTransaction{ signature: signature.clone(), err })?;
 
-        let is_vote = rows[0].try_get(2);
-        if is_vote.is_err() {
-            let msg = format!("Unable to read is_vote field for trx {}", signature);
-            error!("{}", msg);
-            return None;
-        }
-        let is_vote: bool = is_vote.unwrap();
 
-        let message_hash = rows[0].try_get(7);
-        if message_hash.is_err() {
-            let msg = format!("Unable to read message_hash {}", signature);
-            error!("{}", msg);
-            return None;
-        }
-        let message_hash: Vec<u8> = message_hash.unwrap();
+        let is_vote: bool = rows[0].try_get(2)
+            .map_err(|err| FailedReadField { name: "is_vote".to_string() })?;
+
+        let message_hash: Vec<u8> = rows[0].try_get(7)
+            .map_err(|err| FailedReadField { name: "message_hash".to_string() })?;
         let message_hash = Hash::new(&message_hash);
 
-        let result = SanitizedTransaction::try_new(
-            versioned_transaction.unwrap(),
+        SanitizedTransaction::try_new(
+            versioned_transaction,
             message_hash,
             is_vote,
             address_loader
-        );
-
-        if result.is_err() {
-            let msg = format!("Failed to create SanitizedTransaction {}", signature);
-            error!("{}", msg);
-            return None;
-        }
-
-        return Some(result.unwrap());
+        )
+            .map_err(|err| DumperDbError::FailedCreateSanitizedTransaction { signature: signature.clone(), err })
     }
 
-    pub fn get_transaction_accounts(&self, signature: &Signature) -> Option<BTreeMap<Pubkey, AccountSharedData>> {
+    pub fn get_transaction_accounts(&self, signature: &Signature) -> Result<BTreeMap<Pubkey, AccountSharedData>, DumperDbError> {
 
         debug!("Loading accounts for transaction {}", signature);
-        let mut client = self.client.lock();
-        if let Err(err) = client {
-            let msg = format!("Failed to obtain dumper-db lock: {}", err);
-            error!("{}", msg);
-            return None;
-        }
+        let mut client = self.lock_client()?;
 
-        let mut client = client.unwrap();
-        let signature = signature.as_ref().to_vec();
-        let result = client.query(
+        let signature_vec = signature.as_ref().to_vec();
+        let rows = client.query(
             &self.get_pre_accounts_statement,
-            &[&signature],
-        );
-
-        if let Err(err) = result {
-            let msg = format!("Failed to load accounts: {}", err);
-            error!("{}", msg);
-            return None;
-        }
-
-        let rows = result.unwrap();
-        if rows.len() == 0 {
-            let msg = format!("Accounts not found");
-            error!("{}", msg);
-            return None;
-        }
+            &[&signature_vec],
+        ).map_err(|err| {
+            DumperDbError::FailedGetPreAccounts{ signature: signature.clone(), err }
+        })?;
 
         let mut result = BTreeMap::new();
 
         for row in rows {
-            let account = Self::read_account(&row);
-            if account.is_none() {
-                let msg = format!("Failed to read account");
-                error!("{}", msg);
-                return None;
-            }
+            let account = Self::read_account(&row)?;
+            let pubkey: Vec<u8> = row.try_get(5).map_err(|err| FailedReadField {
+                name: "pubkey".to_string()
+            })?;
 
-            if let Some(pubkey) = Self::read_field::<Vec<u8>, _>(&row, 5, "pubkey") {
-                let pubkey = Pubkey::new(&pubkey);
-                debug!("   Account loaded: {}", &pubkey);
-                result.insert(pubkey, account.unwrap());
-            } else {
-                let msg = format!("Failed read account pubkey");
-                error!("{}", msg);
-                return None;
-            }
+            result.insert(Pubkey::new(&pubkey), account);
         }
 
-        Some(result)
+        Ok(result)
     }
 
     pub fn get_transaction_and_accounts(
@@ -631,19 +583,10 @@ impl DumperDb {
         slot: Slot,
         signature: &Signature,
         address_loader: impl AddressLoader
-    ) -> Option<(SanitizedTransaction, BTreeMap<Pubkey, AccountSharedData>)> {
-        let trx = self.get_transaction(slot, signature, address_loader);
-        if trx.is_none() {
-            return None;
-        }
-        let trx = trx.unwrap();
-
-        let accounts = self.get_transaction_accounts(trx.signature());
-        if accounts.is_none() {
-            return None;
-        }
-
-        Some((trx, accounts.unwrap()))
+    ) -> Result<(SanitizedTransaction, BTreeMap<Pubkey, AccountSharedData>), DumperDbError> {
+        let trx = self.get_transaction(slot, signature, address_loader)?;
+        let accounts = self.get_transaction_accounts(trx.signature())?;
+        Ok((trx, accounts))
     }
 
     pub fn get_recent_blockhashes(&self, start_slot: Slot, num_hashes: u32) -> Option<BTreeMap<u64, String>> {
@@ -804,7 +747,7 @@ impl DumperDbBank {
                 }
 
                 if enable_loading.unwrap().value {
-                    if let Some(account) = self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
+                    if let Ok(account) = self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
                         debug!("Account {} loaded from DB", pubkey);
                         account_cache.insert(*pubkey, account.clone());
                         return Some((account, self.slot))
