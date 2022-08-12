@@ -3,7 +3,7 @@ use {
         accounts::Accounts,
         accounts_db::AccountsDb,
         bank::{ Bank, BankFieldsToDeserialize, BankRc }, builtins::Builtins,
-        dumper_db::DumperDb,
+        dumper_db::{ DumperDb, DumperDbError },
         dumperdb_bank::DumperDbBank
     },
     solana_sdk::{
@@ -18,7 +18,36 @@ use {
     std::{
         str::FromStr, sync::Arc,
     },
+    thiserror::Error,
 };
+use solana_sdk::hash::ParseHashError;
+
+#[derive(Error, Debug)]
+pub enum BankCreationError {
+    #[error("Failed to load recent blockhashes: {err}")]
+    FailedLoadBlockhashes{ err: DumperDbError },
+
+    #[error("Failed to load epoch schedule: {err}")]
+    FailedLoadEpochSchedule{ err: DumperDbError },
+
+    #[error("Failed to parse epoch schedule account")]
+    FailedParseEpochSchedule,
+
+    #[error("Failed to load rent: {err}")]
+    FailedLoadRent{ err: DumperDbError },
+
+    #[error("Failed to parse rent account")]
+    FailedParseRent,
+
+    #[error("Failed to load block: {err}")]
+    FailedLoadBlock{ err: DumperDbError },
+
+    #[error("Failed to parse hash: {err}")]
+    FailedParseHash{ err: ParseHashError },
+
+    #[error("Block height not specified")]
+    BlockHeightNotSpecified,
+}
 
 #[cfg(feature = "tracer")]
 impl Bank {
@@ -29,13 +58,28 @@ impl Bank {
         dumper_db: Arc<DumperDb>,
         accounts_data_size_initial: u64,
         additional_builtins: Option<&Builtins>,
-    ) -> Self {
-        let recent_blockhashes = dumper_db.get_recent_blockhashes(slot, 12).unwrap();
-        let epoch_schedule = dumper_db.load_account(&sysvar::epoch_schedule::id(), slot).unwrap();
-        let epoch_schedule: EpochSchedule = from_account(&epoch_schedule).unwrap();
-        let rent = dumper_db.load_account(&sysvar::rent::id(), slot).unwrap();
-        let rent: Rent = from_account(&rent).unwrap();
-        let block = dumper_db.get_block(slot).unwrap();
+    ) -> Result<Self, BankCreationError> {
+        let recent_blockhashes = dumper_db.get_recent_blockhashes(slot, 12)
+            .map_err(|err| BankCreationError::FailedLoadBlockhashes{ err })?;
+
+        let epoch_schedule = dumper_db.load_account(&sysvar::epoch_schedule::id(), slot)
+            .map_err(|err| BankCreationError::FailedLoadEpochSchedule{ err })?;
+        let epoch_schedule = from_account(&epoch_schedule)
+            .map_or_else(
+                || Err(BankCreationError::FailedParseEpochSchedule),
+                |value| Ok(value)
+            )?;
+
+        let rent = dumper_db.load_account(&sysvar::rent::id(), slot)
+            .map_err(|err| BankCreationError::FailedLoadRent{ err })?;
+        let rent = from_account(&rent)
+            .map_or_else(
+                || Err(BankCreationError::FailedParseRent),
+                |value| Ok(value)
+            )?;
+
+        let block = dumper_db.get_block(slot)
+            .map_err(|err| BankCreationError::FailedLoadBlock{ err })?;
 
         let mut genesis_config = GenesisConfig::new(&[], &[]);
         genesis_config.cluster_type = cluster_type;
@@ -48,8 +92,14 @@ impl Bank {
         fields.rent_collector.epoch_schedule = fields.epoch_schedule;
         fields.rent_collector.epoch = fields.epoch_schedule.get_epoch(fields.slot);
 
-        fields.hash = Hash::from_str(&block.blockhash).unwrap();
-        fields.block_height = block.block_height.unwrap() as u64;
+        fields.hash = Hash::from_str(&block.blockhash)
+            .map_err(|err| BankCreationError::FailedParseHash{ err })?;
+
+        if let Some(block_height) = block.block_height {
+            fields.block_height = block_height as u64;
+        } else {
+            return Err(BankCreationError::BlockHeightNotSpecified);
+        }
 
         fields.ticks_per_slot = genesis_config.ticks_per_slot;
         fields.ns_per_slot = genesis_config.poh_config.target_tick_duration.as_nanos()
@@ -64,7 +114,9 @@ impl Bank {
             );
 
         for (current_slot, current_blockhash) in recent_blockhashes {
-            let current_blockhash = Hash::from_str(current_blockhash.as_str()).unwrap();
+            let current_blockhash = Hash::from_str(current_blockhash.as_str())
+                .map_err(|err| BankCreationError::FailedParseHash{ err })?;
+
             if current_slot == slot {
                 fields.hash = current_blockhash;
             } else {
@@ -87,7 +139,7 @@ impl Bank {
         );
 
         bank.fill_missing_sysvar_cache_entries();
-        bank
+        Ok(bank)
     }
 
     pub fn dumper_db(&self) -> &DumperDbBank {

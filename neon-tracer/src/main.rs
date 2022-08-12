@@ -41,7 +41,7 @@ pub fn main() {
         dumper_db.clone(),
         0,
         Some(&solana_ledger::builtins::get(true)),
-    );
+    ).unwrap();
 
     let (trx, accounts) = dumper_db.get_transaction_and_accounts(slot, &signature, &bank).unwrap();
     debug!("message: {:?}, accounts: {:?}", trx.message(), accounts);
