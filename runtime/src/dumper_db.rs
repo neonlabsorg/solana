@@ -288,24 +288,6 @@ impl DumperDb {
         })
     }
 
-    fn read_field<'a, T, I>(row: &'a Row, field_number: I, field_name: &str) -> Option<T>
-        where
-            I: RowIndex + std::fmt::Display,
-            T: FromSql<'a>
-    {
-        let value = row.try_get(field_number);
-        if let Err(err) = value {
-            error!(
-                "Failed to read '{}' field: {}",
-                field_name,
-                err,
-            );
-            return None;
-        }
-        let value: T = value.unwrap();
-        Some(value)
-    }
-
     fn read_account(row: &Row) -> Result<AccountSharedData, DumperDbError> {
         let lamports: i64 = row.try_get(0).map_err(|err| FailedReadField {
             name: "lamports".to_string()
