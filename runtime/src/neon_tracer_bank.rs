@@ -3,7 +3,8 @@ use {
         accounts::Accounts,
         accounts_db::AccountsDb,
         bank::{ Bank, BankFieldsToDeserialize, BankRc }, builtins::Builtins,
-        dumper_db::{ DumperDb, DumperDbBank },
+        dumper_db::DumperDb,
+        dumperdb_bank::DumperDbBank
     },
     solana_sdk::{
         account::from_account,
