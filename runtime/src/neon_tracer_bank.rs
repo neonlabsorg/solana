@@ -10,17 +10,13 @@ use {
         account::from_account,
         clock::Slot, genesis_config::ClusterType,
         genesis_config::GenesisConfig,
-        hash::Hash,
+        hash::{ Hash, ParseHashError },
         sysvar::{ self, rent::Rent, epoch_schedule::EpochSchedule },
         timing::years_as_slots,
     },
-
-    std::{
-        str::FromStr, sync::Arc,
-    },
+    std::{ str::FromStr, sync::Arc },
     thiserror::Error,
 };
-use solana_sdk::hash::ParseHashError;
 
 #[derive(Error, Debug)]
 pub enum BankCreationError {
