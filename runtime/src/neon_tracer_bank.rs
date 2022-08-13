@@ -2,19 +2,22 @@ use {
     crate::{
         accounts::Accounts,
         accounts_db::AccountsDb,
-        bank::{ Bank, BankFieldsToDeserialize, BankRc }, builtins::Builtins,
+        bank::{ Bank, BankFieldsToDeserialize, BankRc, TransactionSimulationResult },
+        builtins::Builtins,
         dumper_db::{ DumperDb, DumperDbError },
         dumperdb_bank::DumperDbBank
     },
     solana_sdk::{
-        account::from_account,
+        account::{ AccountSharedData, from_account },
         clock::Slot, genesis_config::ClusterType,
         genesis_config::GenesisConfig,
         hash::{ Hash, ParseHashError },
-        sysvar::{ self, rent::Rent, epoch_schedule::EpochSchedule },
+        pubkey::Pubkey,
+        sysvar::{ self },
         timing::years_as_slots,
+        transaction::SanitizedTransaction,
     },
-    std::{ str::FromStr, sync::Arc },
+    std::{ collections::BTreeMap, str::FromStr, sync::Arc },
     thiserror::Error,
 };
 
@@ -56,10 +59,10 @@ impl Bank {
         additional_builtins: Option<&Builtins>,
     ) -> Result<Self, BankCreationError> {
         let recent_blockhashes = dumper_db.get_recent_blockhashes(slot, 12)
-            .map_err(|err| BankCreationError::FailedLoadBlockhashes{ err })?;
+            .map_err(|err| BankCreationError::FailedLoadBlockhashes { err })?;
 
         let epoch_schedule = dumper_db.load_account(&sysvar::epoch_schedule::id(), slot)
-            .map_err(|err| BankCreationError::FailedLoadEpochSchedule{ err })?;
+            .map_err(|err| BankCreationError::FailedLoadEpochSchedule { err })?;
         let epoch_schedule = from_account(&epoch_schedule)
             .map_or_else(
                 || Err(BankCreationError::FailedParseEpochSchedule),
@@ -67,7 +70,7 @@ impl Bank {
             )?;
 
         let rent = dumper_db.load_account(&sysvar::rent::id(), slot)
-            .map_err(|err| BankCreationError::FailedLoadRent{ err })?;
+            .map_err(|err| BankCreationError::FailedLoadRent { err })?;
         let rent = from_account(&rent)
             .map_or_else(
                 || Err(BankCreationError::FailedParseRent),
@@ -75,7 +78,7 @@ impl Bank {
             )?;
 
         let block = dumper_db.get_block(slot)
-            .map_err(|err| BankCreationError::FailedLoadBlock{ err })?;
+            .map_err(|err| BankCreationError::FailedLoadBlock { err })?;
 
         let mut genesis_config = GenesisConfig::new(&[], &[]);
         genesis_config.cluster_type = cluster_type;
@@ -89,7 +92,7 @@ impl Bank {
         fields.rent_collector.epoch = fields.epoch_schedule.get_epoch(fields.slot);
 
         fields.hash = Hash::from_str(&block.blockhash)
-            .map_err(|err| BankCreationError::FailedParseHash{ err })?;
+            .map_err(|err| BankCreationError::FailedParseHash { err })?;
 
         if let Some(block_height) = block.block_height {
             fields.block_height = block_height as u64;
@@ -111,7 +114,7 @@ impl Bank {
 
         for (current_slot, current_blockhash) in recent_blockhashes {
             let current_blockhash = Hash::from_str(current_blockhash.as_str())
-                .map_err(|err| BankCreationError::FailedParseHash{ err })?;
+                .map_err(|err| BankCreationError::FailedParseHash { err })?;
 
             if current_slot == slot {
                 fields.hash = current_blockhash;
@@ -138,11 +141,18 @@ impl Bank {
         Ok(bank)
     }
 
-    pub fn dumper_db(&self) -> &DumperDbBank {
-        &self.rc.accounts.accounts_db.dumper_db
-    }
+    pub fn replay_transaction(
+        &self,
+        trx: SanitizedTransaction,
+        accounts: &BTreeMap<Pubkey, AccountSharedData>
+    ) -> Option<TransactionSimulationResult> {
+        if !self.rc.accounts.accounts_db.dumper_db.load_accounts_to_cache(accounts) {
+            return None;
+        }
 
-    pub fn set_enable_loading_from_dumper_db(&self, enable: bool) {
-        self.rc.accounts.accounts_db.dumper_db.set_enable_loading_from_dumper_db(enable);
+        self.rc.accounts.accounts_db.dumper_db.set_enable_loading_from_dumper_db(false);
+        let result = self.simulate_transaction(trx);
+        self.rc.accounts.accounts_db.dumper_db.set_enable_loading_from_dumper_db(true);
+        Some(result)
     }
 }

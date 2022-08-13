@@ -98,39 +98,43 @@ impl DumperDbBank {
         pubkey: &Pubkey,
         max_root: Option<Slot>
     ) -> Option<(AccountSharedData, Slot)> {
-        let account_cache = self.account_cache.lock();
-        let enable_loading = self.enable_loading_from_db.lock();
-        if enable_loading.is_err() {
+        debug!("Loading account {}", pubkey);
+
+        if let Ok(account_cache) = self.account_cache.lock() {
+            if let Some(account) = account_cache.get(pubkey) {
+                debug!("Account {} found in cache", pubkey);
+                return Some((account.clone(), self.slot))
+            }
+        } else {
+            let msg = format!("Failed to obtain account-cache lock");
+            error!("{}", msg);
             return None;
         }
-        match account_cache {
-            Err(err) => {
-                let msg = format!("Failed to obtain account-cache lock: {}", err);
-                error!("{}", msg);
+
+        if let Ok(enable_loading) = self.enable_loading_from_db.lock() {
+            if !enable_loading.value {
                 return None;
             }
-            Ok(mut account_cache) => {
-                if let Some(account) = account_cache.get(pubkey) {
-                    debug!("Account {} found in cache", pubkey);
-                    return Some((account.clone(), self.slot))
-                }
 
-                if !enable_loading.unwrap().value {
-                    return None;
-                }
-
-                return match self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
-                    Ok(account) => {
-                        debug!("Account {} loaded from DB", pubkey);
+            match self.dumper_db.as_ref().unwrap().load_account(pubkey, self.slot) {
+                Ok(account) => {
+                    debug!("Account {} loaded from DB", pubkey);
+                    if let Ok(mut account_cache) = self.account_cache.lock() {
                         account_cache.insert(*pubkey, account.clone());
-                        Some((account, self.slot))
+                    } else {
+                        error!("Failed to save account {} to cache", pubkey);
                     }
-                    Err(err) => {
-                        error!("Unable to read account {} from dumper-db {:?}", pubkey, err);
-                        None
-                    }
+
+                    Some((account, self.slot))
+                }
+                Err(err) => {
+                    error!("Unable to read account {} from dumper-db {:?}", pubkey, err);
+                    None
                 }
             }
+        } else {
+            error!("Failed to check enable_loading");
+            None
         }
     }
 }

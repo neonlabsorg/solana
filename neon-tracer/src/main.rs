@@ -12,9 +12,7 @@ use {
 };
 use solana_sdk::signature::Signature;
 use std::str::FromStr;
-use hex;
 use log::*;
-use solana_ledger::builtins::get;
 
 macro_rules! neon_tracer_pkg_version {
     () => ( env!("CARGO_PKG_VERSION") )
@@ -41,6 +39,9 @@ pub enum TracerError {
 
     #[error("Failed to query transaction and accounts {signature}: {err}")]
     FailedQueryTransactionAccounts{ signature: Signature, err: DumperDbError },
+
+    #[error("Failed to simulate transaction {signature}")]
+    FailedSimulateTransaction{ signature: Signature },
 }
 
 // Return an error if string cannot be parsed as a Base58 encoded Solana signature
@@ -82,9 +83,10 @@ pub fn replay_transaction(
         .get_transaction_and_accounts(slot, signature, &bank)
         .map_err(|err| TracerError::FailedQueryTransactionAccounts { signature: signature.clone(), err })?;
 
-    bank.dumper_db().load_accounts_to_cache(&accounts);
-    bank.set_enable_loading_from_dumper_db(false);
-    Ok(bank.simulate_transaction(trx))
+    bank.replay_transaction(trx, &accounts).map_or(
+        Err(TracerError::FailedSimulateTransaction { signature: signature.clone() }),
+        |result| Ok(result)
+    )
 }
 
 pub fn main() {
