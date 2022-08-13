@@ -19,6 +19,7 @@ solana-ledger = { path = "../ledger", version = "=1.11.3" }
 hex = "*"
 log = "0.4.17"
 thiserror = "1.0"
+handlebars = "3"
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.126"

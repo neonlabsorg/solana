@@ -1,11 +1,12 @@
 use {
     clap::{ App, Arg, AppSettings, crate_description, crate_name, SubCommand },
+    handlebars::Handlebars,
     solana_runtime::{
         bank::{ Bank, TransactionSimulationResult },
         dumper_db::{ DumperDb, DumperDbConfig, DumperDbError },
         neon_tracer_bank::BankCreationError,
     },
-    std::sync::Arc,
+    std::{ collections::HashMap, sync::Arc },
     solana_sdk::{ clock::Slot, genesis_config::ClusterType, },
     thiserror::Error,
 };
@@ -42,11 +43,17 @@ pub enum TracerError {
     FailedQueryTransactionAccounts{ signature: Signature, err: DumperDbError },
 }
 
-// Return an error if string cannot be parsed as a H160 address
+// Return an error if string cannot be parsed as a Base58 encoded Solana signature
 fn is_valid_signature<T>(string: T) -> Result<(), String> where T: AsRef<str>,
 {
     Signature::from_str(string.as_ref()).map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+// Return an error if string cannot be parsed as output format
+fn is_valid_out_format<T>(string: T) -> Result<(), String> where T: AsRef<str>,
+{
+    Ok(())
 }
 
 pub fn create_dumperdb(db_config: &DumperDbConfig) -> Result<Arc<DumperDb>, TracerError> {
@@ -104,6 +111,15 @@ pub fn main() {
                     .required(true)
                     .validator(is_valid_signature)
                     .help("Signature of Solana transaction")
+            )
+            .arg(
+                Arg::with_name("output-format")
+                    .value_name("OUTPUT_FORMAT")
+                    .takes_value(true)
+                    .index(2)
+                    .required(false)
+                    .validator(is_valid_out_format)
+                    .help("Output format of command (compatible with handlebars templater). Supported placeholders: result, logs, units_consumed, return")
             ))
         .get_matches();
 
@@ -130,10 +146,23 @@ pub fn main() {
                 &signature,
                 true).unwrap();
 
-            debug!("Simulation finished:");
-            debug!("Simulation result: {:?}", simulation_result.result);
-            debug!("Log messages: {:?}", simulation_result.logs);
-            debug!("Units consumed: {}", simulation_result.units_consumed);
+            let output_format = arg_matches.value_of("output-format")
+                .unwrap_or(
+                    "Simulation result: {{{ result }}}\nLog messages: {{{ logs }}}\nUnits consumed: {{{ units_consumed }}}\nReturn: {{{ return }}}"
+                );
+
+            let mut handlebars = Handlebars::new();
+            handlebars
+                .register_template_string("ouput_format", output_format)
+                .unwrap();
+
+            let mut data = HashMap::new();
+            data.insert("result", format!("{:?}", simulation_result.result));
+            data.insert("logs", format!("{:?}", simulation_result.logs));
+            data.insert("units_consumed", format!("{:?}", simulation_result.units_consumed));
+            data.insert("return", format!("{:?}", simulation_result.return_data));
+
+            print!("{}", handlebars.render("ouput_format", &data).unwrap());
         }
         (_, _) => {}
     }
