@@ -1,18 +1,16 @@
 use {
     clap::{ App, Arg, AppSettings, crate_description, crate_name, SubCommand },
     handlebars::Handlebars,
+    log::*,
     solana_runtime::{
         bank::{ Bank, TransactionSimulationResult },
         dumper_db::{ DumperDb, DumperDbConfig, DumperDbError },
         neon_tracer_bank::BankCreationError,
     },
-    std::{ collections::HashMap, sync::Arc },
-    solana_sdk::{ clock::Slot, genesis_config::ClusterType, },
+    std::{ collections::HashMap, str::FromStr, sync::Arc },
+    solana_sdk::{ clock::Slot, genesis_config::ClusterType, signature::Signature },
     thiserror::Error,
 };
-use solana_sdk::signature::Signature;
-use std::str::FromStr;
-use log::*;
 
 macro_rules! neon_tracer_pkg_version {
     () => ( env!("CARGO_PKG_VERSION") )
@@ -28,8 +26,8 @@ macro_rules! version_string {
 
 #[derive(Debug, Error)]
 pub enum TracerError {
-    #[error("Failed to create DumperDb")]
-    FailedCreateDumperDb,
+    #[error("Failed to create DumperDb: {err}")]
+    FailedCreateDumperDb{ err: DumperDbError },
 
     #[error("Failed to query transaction {signature}: {err}")]
     FailedToGetSlot{ signature: Signature, err: DumperDbError },
@@ -45,8 +43,7 @@ pub enum TracerError {
 }
 
 // Return an error if string cannot be parsed as a Base58 encoded Solana signature
-fn is_valid_signature<T>(string: T) -> Result<(), String> where T: AsRef<str>,
-{
+fn is_valid_signature<T>(string: T) -> Result<(), String> where T: AsRef<str> {
     Signature::from_str(string.as_ref()).map(|_| ())
         .map_err(|e| e.to_string())
 }
@@ -59,7 +56,7 @@ fn is_valid_out_format<T>(string: T) -> Result<(), String> where T: AsRef<str>,
 
 pub fn create_dumperdb(db_config: &DumperDbConfig) -> Result<Arc<DumperDb>, TracerError> {
     Ok(Arc::new(DumperDb::new(db_config)
-        .map_err(|err| TracerError::FailedCreateDumperDb)?))
+        .map_err(|err| TracerError::FailedCreateDumperDb{ err })?))
 }
 
 pub fn replay_transaction(
