@@ -1,5 +1,7 @@
+use im::HashSet;
 use {
     log::*,
+    itertools::Itertools,
     neon_dumper_plugin::postgres_client::postgres_client_transaction::{
         DbTransactionMessage,
         DbTransactionMessageV0
@@ -13,7 +15,7 @@ use {
         instruction::CompiledInstruction,
         message::{
             Message as LegacyMessage, v0::Message as V0Message, MessageHeader, VersionedMessage,
-            v0::MessageAddressTableLookup,
+            v0::MessageAddressTableLookup, SanitizedMessage,
         },
         signature::Signature,
         transaction::{ SanitizedTransaction, SanitizedVersionedTransaction, VersionedTransaction, AddressLoader },
@@ -222,7 +224,7 @@ impl DumperDb {
     }
 
     fn create_get_pre_accounts_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
-        let stmt = "SELECT lamports, data, owner, executable, rent_epoch, pubkey FROM get_pre_accounts($1);";
+        let stmt = "SELECT lamports, data, owner, executable, rent_epoch, pubkey FROM get_pre_accounts($1, $2);";
         let stmt = client.prepare(stmt);
         stmt.map_err(|err| {
             let msg = format!("Failed to prepare get_pre_accounts statement: {}", err);
@@ -499,17 +501,40 @@ impl DumperDb {
             .map_err(|err| DumperDbError::FailedCreateSanitizedTransaction { signature: signature.clone(), err })
     }
 
-    pub fn get_transaction_accounts(&self, signature: &Signature) -> Result<BTreeMap<Pubkey, AccountSharedData>, DumperDbError> {
+    fn get_transaction_account_pubkeys(trx: &SanitizedTransaction) -> HashSet<Pubkey> {
+        let mut result = HashSet::new();
+        match trx.message() {
+            SanitizedMessage::Legacy(legacy_message) => {
+                legacy_message.account_keys.iter()
+                    .for_each(|entry| { result.insert(entry.clone()); });
+            }
+            SanitizedMessage::V0(v0_message) => {
+                v0_message.message.account_keys.iter()
+                    .for_each(|entry| { result.insert(entry.clone()); });
+                v0_message.loaded_addresses.writable.iter()
+                    .for_each(|entry| { result.insert(entry.clone()); });
+                v0_message.loaded_addresses.readonly.iter()
+                    .for_each(|entry| { result.insert(entry.clone()); });
+            }
+        }
 
-        debug!("Loading accounts for transaction {}", signature);
+        result
+    }
+
+    pub fn get_transaction_accounts(&self, trx: &SanitizedTransaction) -> Result<BTreeMap<Pubkey, AccountSharedData>, DumperDbError> {
+
+        debug!("Loading accounts for transaction {}", trx.signature());
         let mut client = self.lock_client()?;
 
-        let signature_vec = signature.as_ref().to_vec();
+        let signature_vec = trx.signature().as_ref().to_vec();
+        let accounts = Self::get_transaction_account_pubkeys(trx).iter()
+            .map(|entry| entry.to_bytes().as_slice().to_vec()).collect_vec();
+
         let rows = client.query(
             &self.get_pre_accounts_statement,
-            &[&signature_vec],
+            &[&signature_vec, &accounts],
         ).map_err(|err| {
-            DumperDbError::FailedGetPreAccounts{ signature: signature.clone(), err }
+            DumperDbError::FailedGetPreAccounts{ signature: trx.signature().clone(), err }
         })?;
 
         let mut result = BTreeMap::new();
@@ -532,7 +557,7 @@ impl DumperDb {
         address_loader: impl AddressLoader
     ) -> Result<(SanitizedTransaction, BTreeMap<Pubkey, AccountSharedData>), DumperDbError> {
         let trx = self.get_transaction(slot, signature, address_loader)?;
-        let accounts = self.get_transaction_accounts(trx.signature())?;
+        let accounts = self.get_transaction_accounts(&trx)?;
         Ok((trx, accounts))
     }
 

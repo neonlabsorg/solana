@@ -1,18 +1,16 @@
 use {
     clap::{ App, Arg, AppSettings, crate_description, crate_name, SubCommand },
     handlebars::Handlebars,
+    log::*,
     solana_runtime::{
         bank::{ Bank, TransactionSimulationResult },
         dumper_db::{ DumperDb, DumperDbConfig, DumperDbError },
         neon_tracer_bank::BankCreationError,
     },
-    std::{ collections::HashMap, sync::Arc },
-    solana_sdk::{ clock::Slot, genesis_config::ClusterType, },
+    std::{ collections::HashMap, str::FromStr, sync::Arc },
+    solana_sdk::{ clock::Slot, genesis_config::ClusterType, signature::Signature },
     thiserror::Error,
 };
-use solana_sdk::signature::Signature;
-use std::str::FromStr;
-use log::*;
 
 macro_rules! neon_tracer_pkg_version {
     () => ( env!("CARGO_PKG_VERSION") )
@@ -45,8 +43,7 @@ pub enum TracerError {
 }
 
 // Return an error if string cannot be parsed as a Base58 encoded Solana signature
-fn is_valid_signature<T>(string: T) -> Result<(), String> where T: AsRef<str>,
-{
+fn is_valid_signature<T>(string: T) -> Result<(), String> where T: AsRef<str> {
     Signature::from_str(string.as_ref()).map(|_| ())
         .map_err(|e| e.to_string())
 }
