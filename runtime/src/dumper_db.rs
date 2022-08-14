@@ -233,7 +233,7 @@ impl DumperDb {
     }
 
     fn create_get_recent_blockhashes_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
-        let stmt = "SELECT * FROM get_recent_blockhashes2($1, $2);";
+        let stmt = "SELECT * FROM get_recent_blockhashes($1, $2);";
         let stmt = client.prepare(stmt);
         stmt.map_err(|err| {
             let msg = format!("Failed to prepare get_recent_blockhashes statement: {}", err);
