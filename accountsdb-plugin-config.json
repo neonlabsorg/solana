@@ -1,0 +1,10 @@
+{
+    "libpath": "/opt/solana/bin/libneon_dumper_plugin.so",
+    "connection_str": "host=postgres port=5432 dbname=solana user=solana-user password=solana-pass",
+    "threads": 20,
+    "batch_size": 20,
+    "panic_on_db_errors": true,
+    "transaction_selector" : {
+        "mentions" : ["53DfF883gyixYNXnM7s5xhdeyV8mVk9T4i2hGV9vG9io"]
+    }
+}

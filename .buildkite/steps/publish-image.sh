@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-
-REVISION=$(git rev-parse HEAD)
+source .buildkite/steps/revision.sh
 
 docker images
 
@@ -15,6 +14,10 @@ else
     TAG=${BUILDKITE_BRANCH}
 fi
 
-docker pull neonlabsorg/solana:${REVISION}
-docker tag neonlabsorg/solana:${REVISION} neonlabsorg/solana:${TAG}
-docker push neonlabsorg/solana:${TAG}
+docker pull neonlabsorg/neon-validator:${BUILDKITE_COMMIT}
+docker tag neonlabsorg/neon-validator:${BUILDKITE_COMMIT} neonlabsorg/neon-validator:${TAG}
+docker push neonlabsorg/neon-validator:${TAG}
+
+docker pull neonlabsorg/neon-accountsdb:${BUILDKITE_COMMIT}
+docker tag neonlabsorg/neon-accountsdb:${BUILDKITE_COMMIT} neonlabsorg/neon-accountsdb:${TAG}
+docker push neonlabsorg/neon-accountsdb:${TAG}
