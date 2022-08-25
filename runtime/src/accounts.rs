@@ -1237,6 +1237,7 @@ impl Accounts {
     ) {
         let mut accounts = Vec::with_capacity(load_results.len());
         let mut signatures = Vec::with_capacity(load_results.len());
+        let mut program_instr_iter = Vec::with_capacity(load_results.len());
         for (i, ((tx_load_result, nonce), tx)) in load_results.iter_mut().zip(txs).enumerate() {
             if tx_load_result.is_err() {
                 // Don't store any accounts if tx failed to load
@@ -1262,6 +1263,7 @@ impl Accounts {
             };
 
             let message = tx.message();
+            program_instr_iter.push(message.program_instructions_iter());
             let loaded_transaction = tx_load_result.as_mut().unwrap();
             let mut fee_payer_index = None;
             for (i, (address, account)) in (0..message.account_keys().len())
