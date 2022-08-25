@@ -2,13 +2,10 @@ use im::HashSet;
 use {
     log::*,
     itertools::Itertools,
-    neon_dumper_plugin::postgres_client::postgres_client_transaction::{
-        DbTransactionMessage,
-        DbTransactionMessageV0
-    },
     openssl::ssl::{SslConnector, SslFiletype, SslMethod},
     postgres::{Client, NoTls, Row, Statement},
     postgres_openssl::MakeTlsConnector,
+    postgres_types::{FromSql, ToSql},
     solana_sdk::{
         account::{ AccountSharedData, WritableAccount },
         clock::Slot, pubkey::Pubkey,
@@ -24,6 +21,49 @@ use {
     std::{ collections::BTreeMap, sync::{ Mutex, MutexGuard }},
     thiserror::Error,
 };
+
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "CompiledInstruction")]
+pub struct DbCompiledInstruction {
+    pub program_id_index: i16,
+    pub accounts: Vec<i16>,
+    pub data: Vec<u8>,
+}
+
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "TransactionMessageHeader")]
+pub struct DbTransactionMessageHeader {
+    pub num_required_signatures: i16,
+    pub num_readonly_signed_accounts: i16,
+    pub num_readonly_unsigned_accounts: i16,
+}
+
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "TransactionMessage")]
+pub struct DbTransactionMessage {
+    pub header: DbTransactionMessageHeader,
+    pub account_keys: Vec<Vec<u8>>,
+    pub recent_blockhash: Vec<u8>,
+    pub instructions: Vec<DbCompiledInstruction>,
+}
+
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "TransactionMessageAddressTableLookup")]
+pub struct DbTransactionMessageAddressTableLookup {
+    pub account_key: Vec<u8>,
+    pub writable_indexes: Vec<i16>,
+    pub readonly_indexes: Vec<i16>,
+}
+
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "TransactionMessageV0")]
+pub struct DbTransactionMessageV0 {
+    pub header: DbTransactionMessageHeader,
+    pub account_keys: Vec<Vec<u8>>,
+    pub recent_blockhash: Vec<u8>,
+    pub instructions: Vec<DbCompiledInstruction>,
+    pub address_table_lookups: Vec<DbTransactionMessageAddressTableLookup>,
+}
 
 pub struct DumperDb {
     client: Mutex<Client>,

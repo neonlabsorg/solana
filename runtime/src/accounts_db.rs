@@ -75,7 +75,6 @@ use {
         hash::Hash,
         pubkey::Pubkey,
         rent::Rent,
-        signature::Signature,
         timing::AtomicInterval,
     },
     std::{
