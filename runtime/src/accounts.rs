@@ -1196,7 +1196,7 @@ impl Accounts {
         lamports_per_signature: u64,
         preserve_rent_epoch_for_rent_exempt_accounts: bool,
     ) {
-        let (accounts_to_store, txn_signatures) = self.collect_accounts_to_store(
+        let (accounts_to_store, transactions) = self.collect_accounts_to_store(
             txs,
             res,
             loaded,
@@ -1206,7 +1206,7 @@ impl Accounts {
             preserve_rent_epoch_for_rent_exempt_accounts,
         );
         self.accounts_db
-            .store_cached((slot, &accounts_to_store[..]), Some(&txn_signatures));
+            .store_cached((slot, &accounts_to_store[..]), Some(&transactions));
     }
 
     pub fn store_accounts_cached<'a, T: ReadableAccount + Sync + ZeroLamport>(
@@ -1233,10 +1233,10 @@ impl Accounts {
         preserve_rent_epoch_for_rent_exempt_accounts: bool,
     ) -> (
         Vec<(&'a Pubkey, &'a AccountSharedData)>,
-        Vec<Option<&'a Signature>>,
+        Vec<Option<&'a SanitizedTransaction>>,
     ) {
         let mut accounts = Vec::with_capacity(load_results.len());
-        let mut signatures = Vec::with_capacity(load_results.len());
+        let mut transactions = Vec::with_capacity(load_results.len());
         for (i, ((tx_load_result, nonce), tx)) in load_results.iter_mut().zip(txs).enumerate() {
             if tx_load_result.is_err() {
                 // Don't store any accounts if tx failed to load
@@ -1302,12 +1302,12 @@ impl Accounts {
 
                         // Add to the accounts to store
                         accounts.push((&*address, &*account));
-                        signatures.push(Some(tx.signature()));
+                        transactions.push(Some(tx));
                     }
                 }
             }
         }
-        (accounts, signatures)
+        (accounts, transactions)
     }
 }
 

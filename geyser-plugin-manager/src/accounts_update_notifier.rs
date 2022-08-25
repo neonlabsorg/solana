@@ -14,7 +14,7 @@ use {
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount},
         clock::Slot,
-        signature::Signature,
+        transaction::SanitizedTransaction,
     },
     std::sync::{Arc, RwLock},
 };
@@ -29,10 +29,10 @@ impl AccountsUpdateNotifierInterface for AccountsUpdateNotifierImpl {
         slot: Slot,
         meta: &StoredMeta,
         account: &AccountSharedData,
-        txn_signature: &Option<&Signature>,
+        tx: &Option<&SanitizedTransaction>,
     ) {
         if let Some(account_info) =
-            self.accountinfo_from_shared_account_data(meta, account, txn_signature)
+            self.accountinfo_from_shared_account_data(meta, account, tx)
         {
             self.notify_plugins_of_account_update(account_info, slot, false);
         }
@@ -106,7 +106,7 @@ impl AccountsUpdateNotifierImpl {
         &self,
         meta: &'a StoredMeta,
         account: &'a AccountSharedData,
-        txn_signature: &'a Option<&'a Signature>,
+        tx: &'a Option<&'a SanitizedTransaction>,
     ) -> Option<ReplicaAccountInfoV2<'a>> {
         Some(ReplicaAccountInfoV2 {
             pubkey: meta.pubkey.as_ref(),
@@ -116,7 +116,7 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: account.rent_epoch(),
             data: account.data(),
             write_version: meta.write_version,
-            txn_signature: *txn_signature,
+            tx: *tx,
         })
     }
 
@@ -132,7 +132,7 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: stored_account_meta.account_meta.rent_epoch,
             data: stored_account_meta.data,
             write_version: stored_account_meta.meta.write_version,
-            txn_signature: None,
+            tx: None,
         })
     }
 
