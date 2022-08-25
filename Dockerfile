@@ -7,8 +7,7 @@ RUN cargo build --release \
     --bin solana-validator \
     --bin solana-faucet \
     --bin solana-genesis \
-    --bin solana-keygen \
-    --lib
+    --bin solana-keygen
 
 
 FROM ubuntu:20.04
