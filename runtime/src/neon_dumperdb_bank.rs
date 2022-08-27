@@ -1,5 +1,5 @@
 use {
-    crate::{ ancestors::Ancestors, dumper_db::DumperDb },
+    crate::{ ancestors::Ancestors, neon_dumperdb::DumperDb },
     solana_sdk::{
         clock::Slot,
         pubkey::Pubkey,

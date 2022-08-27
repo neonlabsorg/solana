@@ -4,7 +4,7 @@ use {
     log::*,
     solana_runtime::{
         bank::{ Bank, TransactionSimulationResult },
-        dumper_db::{ DumperDb, DumperDbConfig, DumperDbError },
+        neon_dumperdb::{ DumperDb, DumperDbConfig, DumperDbError },
         neon_tracer_bank::BankCreationError,
     },
     std::{ collections::HashMap, str::FromStr, sync::Arc },

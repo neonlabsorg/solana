@@ -1,6 +1,6 @@
-use im::HashSet;
 use {
     log::*,
+    im::HashSet,
     itertools::Itertools,
     openssl::ssl::{SslConnector, SslFiletype, SslMethod},
     postgres::{Client, NoTls, Row, Statement},

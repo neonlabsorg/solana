@@ -11,6 +11,7 @@ RUN cargo build --release \
     --bin solana-faucet \
     --bin solana-genesis \
     --bin solana-keygen \
+    --bin neon-tracer \
     --lib
 
 # Download and build spl-token
