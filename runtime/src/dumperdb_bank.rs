@@ -52,7 +52,7 @@ impl DumperDbBank {
                 error!("{}", msg);
                 None
             }
-            Ok(mut account_cache) => {
+            Ok(account_cache) => {
                 Some(account_cache.clone())
             }
         }
@@ -94,9 +94,9 @@ impl DumperDbBank {
 
     pub fn load_account(
         &self,
-        ancestors: &Ancestors,
+        _ancestors: &Ancestors,
         pubkey: &Pubkey,
-        max_root: Option<Slot>
+        _max_root: Option<Slot>
     ) -> Option<(AccountSharedData, Slot)> {
 
         debug!("Loading account {}", pubkey);

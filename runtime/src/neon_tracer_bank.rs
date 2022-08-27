@@ -1,3 +1,4 @@
+#[cfg(feature = "tracer")]
 use {
     crate::{
         accounts::Accounts,
@@ -21,6 +22,7 @@ use {
     thiserror::Error,
 };
 
+#[cfg(feature = "tracer")]
 #[derive(Error, Debug)]
 pub enum BankCreationError {
     #[error("Failed to load recent blockhashes: {err}")]
