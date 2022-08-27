@@ -1817,20 +1817,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
-name = "handlebars"
-version = "3.5.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4498fc115fa7d34de968184e473529abb40eeb6be8bc5f7faba3d08c316cb3e3"
-dependencies = [
- "log",
- "pest",
- "pest_derive",
- "quick-error 2.0.1",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "hash32"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2706,20 +2692,39 @@ dependencies = [
 ]
 
 [[package]]
-name = "neon-tracer"
+name = "neon-dumper-plugin"
 version = "1.11.3"
 dependencies = [
- "clap 2.34.0",
- "handlebars",
- "hex",
+ "bs58",
+ "bytemuck",
+ "chrono",
+ "crossbeam-channel",
  "libc",
+ "libloading",
  "log",
- "signal-hook",
- "solana-ledger",
+ "openssl",
+ "postgres",
+ "postgres-openssl",
+ "postgres-types",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serial_test 0.5.1",
+ "solana-account-decoder",
+ "solana-core",
+ "solana-geyser-plugin-interface",
+ "solana-local-cluster",
  "solana-logger 1.11.3",
+ "solana-measure",
+ "solana-metrics",
+ "solana-net-utils",
  "solana-runtime",
  "solana-sdk 1.11.3",
+ "solana-streamer",
+ "solana-transaction-status",
+ "tempfile",
  "thiserror",
+ "tokio-postgres",
 ]
 
 [[package]]
@@ -4326,6 +4331,17 @@ dependencies = [
 
 [[package]]
 name = "serial_test"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0bccbcf40c8938196944a3da0e133e031a33f4d6b72db3bda3cc556e361905d"
+dependencies = [
+ "lazy_static",
+ "parking_lot 0.11.2",
+ "serial_test_derive 0.5.1",
+]
+
+[[package]]
+name = "serial_test"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7eec42e7232e5ca56aa59d63af3c7f991fe71ee6a3ddd2d3480834cf3902b007"
@@ -4349,6 +4365,17 @@ dependencies = [
  "log",
  "parking_lot 0.12.1",
  "serial_test_derive 0.9.0",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2acd6defeddb41eb60bb468f8825d0cfd0c2a76bc03bfd235b6a1dc4f6a1ad5"
+dependencies = [
+ "proc-macro2 1.0.43",
+ "quote 1.0.21",
+ "syn 1.0.99",
 ]
 
 [[package]]
