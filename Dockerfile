@@ -1,7 +1,10 @@
 ARG NEON_EVM_REVISION
+ARG NEON_TRACER_REVISION
 
 FROM solanalabs/rust:latest AS builder
 #Build Solana and Dumper-plugin
+
+ENV NEON_TRACER_REVISION=${NEON_TRACER_REVISION}
 
 COPY . /opt
 WORKDIR /opt
