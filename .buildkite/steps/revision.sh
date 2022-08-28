@@ -1,7 +1,6 @@
 #!/bin/bash
 
 set ${NEON_EVM_REVISION:=latest}
-set ${NEON_TRACER_REVISION:=1.11.3}
 
+echo "Neon Validator revision=${BUILDKITE_COMMIT}"
 echo "Neon EVM revision=${NEON_EVM_REVISION}"
-echo "Neon Tracer Revision=${NEON_TRACER_REVISION}"

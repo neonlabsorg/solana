@@ -17,7 +17,7 @@ macro_rules! neon_tracer_pkg_version {
 }
 
 macro_rules! neon_tracer_revision {
-    () => ( env!("NEON_TRACER_REVISION") )
+    () => ( env!("BUILDKITE_COMMIT") )
 }
 
 macro_rules! version_string {
