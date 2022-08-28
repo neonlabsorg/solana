@@ -1,4 +1,7 @@
 ARG NEON_EVM_REVISION
+ARG NEON_TRACER_REVISION
+
+ENV NEON_TRACER_REVISION=${NEON_TRACER_REVISIOIN}
 
 FROM solanalabs/rust:latest AS builder
 #Build Solana and Dumper-plugin
@@ -32,6 +35,7 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/target/release/solana-keygen \
                     /opt/target/release/solana-validator \
                     /opt/target/release/solana-genesis \
+                    /opt/target/release/neon-tracer \
                     /opt/target/release/libneon_dumper_plugin.so \
                     /opt/solana/bin/
 
