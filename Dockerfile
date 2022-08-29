@@ -14,7 +14,6 @@ RUN cargo build --release \
     --bin solana-faucet \
     --bin solana-genesis \
     --bin solana-keygen \
-    --bin neon-tracer \
     --lib
 
 # Download and build spl-token
@@ -35,7 +34,6 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/target/release/solana-keygen \
                     /opt/target/release/solana-validator \
                     /opt/target/release/solana-genesis \
-                    /opt/target/release/neon-tracer \
                     /opt/target/release/libneon_dumper_plugin.so \
                     /opt/solana/bin/
 
