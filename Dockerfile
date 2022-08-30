@@ -16,6 +16,9 @@ RUN cargo build --release \
     --bin solana-keygen \
     --lib
 
+RUN cargo build --release \
+    --bin neon-tracer
+
 # Download and build spl-token
 FROM builder AS spl-token-builder
 ADD http://github.com/solana-labs/solana-program-library/archive/refs/tags/token-cli-v2.0.14.tar.gz /opt/
@@ -35,6 +38,7 @@ COPY --from=builder /opt/target/release/solana \
                     /opt/target/release/solana-validator \
                     /opt/target/release/solana-genesis \
                     /opt/target/release/libneon_dumper_plugin.so \
+                    /opt/target/release/neon-tracer \
                     /opt/solana/bin/
 
 COPY --from=builder /opt/scripts/run.sh /opt/solana/bin/solana-run.sh
