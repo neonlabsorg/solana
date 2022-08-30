@@ -38,6 +38,10 @@ impl DumperDbBank {
         }
     }
 
+    pub fn is_initialized(&self) -> bool {
+        return self.dumper_db.is_some();
+    }
+
     pub fn set_enable_loading_from_dumper_db(&self, enable: bool) {
         if let Ok(mut enable_loading) = self.enable_loading_from_db.lock() {
             enable_loading.set_enable_loading(enable);

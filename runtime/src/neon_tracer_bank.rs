@@ -1,4 +1,3 @@
-#[cfg(feature = "tracer")]
 use {
     crate::{
         accounts::Accounts,
@@ -22,7 +21,6 @@ use {
     thiserror::Error,
 };
 
-#[cfg(feature = "tracer")]
 #[derive(Error, Debug)]
 pub enum BankCreationError {
     #[error("Failed to load recent blockhashes: {err}")]
@@ -50,7 +48,6 @@ pub enum BankCreationError {
     BlockHeightNotSpecified,
 }
 
-#[cfg(feature = "tracer")]
 impl Bank {
     #[allow(clippy::float_cmp)]
     pub fn new_for_tracer(

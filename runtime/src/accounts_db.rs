@@ -76,6 +76,7 @@ use {
         pubkey::Pubkey,
         rent::Rent,
         timing::AtomicInterval,
+        transaction::SanitizedTransaction,
     },
     std::{
         borrow::{Borrow, Cow},
@@ -96,7 +97,6 @@ use {
     },
     tempfile::TempDir,
 };
-use solana_sdk::transaction::SanitizedTransaction;
 
 const PAGE_SIZE: u64 = 4 * 1024;
 const MAX_RECYCLE_STORES: usize = 1000;
@@ -4572,7 +4572,6 @@ impl AccountsDb {
 
     /// if 'load_into_read_cache_only', then return value is meaningless.
     ///   The goal is to get the account into the read-only cache.
-    #[cfg(not(feature = "tracer"))]
     fn do_load_with_populate_read_cache(
         &self,
         ancestors: &Ancestors,
@@ -4583,6 +4582,11 @@ impl AccountsDb {
     ) -> Option<(AccountSharedData, Slot)> {
         #[cfg(not(test))]
         assert!(max_root.is_none());
+
+        #[cfg(feature = "tracer")]
+        if self.dumper_db.is_initialized() {
+            return self.do_load_from_dumper_db(ancestors, pubkey, max_root, load_hint, load_into_read_cache_only);
+        }
 
         let (slot, storage_location, _maybe_account_accesor) =
             self.read_index_for_accessor_or_load_slow(ancestors, pubkey, max_root, false)?;
@@ -4641,16 +4645,14 @@ impl AccountsDb {
         Some((account, slot))
     }
 
-    /// if 'load_into_read_cache_only', then return value is meaningless.
-    ///   The goal is to get the account into the read-only cache.
     #[cfg(feature = "tracer")]
-    fn do_load_with_populate_read_cache(
+    fn do_load_from_dumper_db(
         &self,
         ancestors: &Ancestors,
         pubkey: &Pubkey,
         max_root: Option<Slot>,
-        load_hint: LoadHint,
-        load_into_read_cache_only: bool,
+        _load_hint: LoadHint,
+        _load_into_read_cache_only: bool,
     ) -> Option<(AccountSharedData, Slot)> {
         self.dumper_db.load_account(ancestors, pubkey, max_root)
     }
@@ -7498,13 +7500,18 @@ impl AccountsDb {
         self.store((slot, accounts), false, None);
     }
 
-    #[cfg(not(feature = "tracer"))]
     fn store<'a, T: ReadableAccount + Sync + ZeroLamport>(
         &self,
         accounts: impl StorableAccounts<'a, T>,
         is_cached_store: bool,
         transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) {
+        #[cfg(feature = "tracer")]
+        if self.dumper_db.is_initialized() {
+            self.store_to_dumper_db(accounts, is_cached_store, transactions);
+            return;
+        }
+
         // If all transactions in a batch are errored,
         // it's possible to get a store with no accounts.
         if accounts.is_empty() {
@@ -7538,11 +7545,11 @@ impl AccountsDb {
     }
 
     #[cfg(feature = "tracer")]
-    fn store<'a, T: ReadableAccount + Sync + ZeroLamport>(
+    fn store_to_dumper_db<'a, T: ReadableAccount + Sync + ZeroLamport>(
         &self,
-        accounts: impl StorableAccounts<'a, T>,
-        is_cached_store: bool,
-        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
+        _accounts: impl StorableAccounts<'a, T>,
+        _is_cached_store: bool,
+        _transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) {
         todo!()
     }
