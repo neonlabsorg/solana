@@ -1,14 +1,11 @@
-use im::HashSet;
 use {
     log::*,
+    im::HashSet,
     itertools::Itertools,
-    neon_dumper_plugin::postgres_client::postgres_client_transaction::{
-        DbTransactionMessage,
-        DbTransactionMessageV0
-    },
     openssl::ssl::{SslConnector, SslFiletype, SslMethod},
     postgres::{Client, NoTls, Row, Statement},
     postgres_openssl::MakeTlsConnector,
+    postgres_types::{FromSql, ToSql},
     solana_sdk::{
         account::{ AccountSharedData, WritableAccount },
         clock::Slot, pubkey::Pubkey,
@@ -25,6 +22,49 @@ use {
     thiserror::Error,
 };
 
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "CompiledInstruction")]
+pub struct DbCompiledInstruction {
+    pub program_id_index: i16,
+    pub accounts: Vec<i16>,
+    pub data: Vec<u8>,
+}
+
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "TransactionMessageHeader")]
+pub struct DbTransactionMessageHeader {
+    pub num_required_signatures: i16,
+    pub num_readonly_signed_accounts: i16,
+    pub num_readonly_unsigned_accounts: i16,
+}
+
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "TransactionMessage")]
+pub struct DbTransactionMessage {
+    pub header: DbTransactionMessageHeader,
+    pub account_keys: Vec<Vec<u8>>,
+    pub recent_blockhash: Vec<u8>,
+    pub instructions: Vec<DbCompiledInstruction>,
+}
+
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "TransactionMessageAddressTableLookup")]
+pub struct DbTransactionMessageAddressTableLookup {
+    pub account_key: Vec<u8>,
+    pub writable_indexes: Vec<i16>,
+    pub readonly_indexes: Vec<i16>,
+}
+
+#[derive(Clone, Debug, FromSql, ToSql)]
+#[postgres(name = "TransactionMessageV0")]
+pub struct DbTransactionMessageV0 {
+    pub header: DbTransactionMessageHeader,
+    pub account_keys: Vec<Vec<u8>>,
+    pub recent_blockhash: Vec<u8>,
+    pub instructions: Vec<DbCompiledInstruction>,
+    pub address_table_lookups: Vec<DbTransactionMessageAddressTableLookup>,
+}
+
 pub struct DumperDb {
     client: Mutex<Client>,
     get_accounts_at_slot_statement: Statement,
@@ -36,7 +76,7 @@ pub struct DumperDb {
 }
 
 impl std::fmt::Debug for DumperDb {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
     }
 }
@@ -65,8 +105,8 @@ pub enum DumperDbError {
     #[error("More than one occurence of account {pubkey} found in slot {slot}")]
     TooManyAccs{ pubkey: Pubkey, slot: Slot },
 
-    #[error("Failed to read field {name}")]
-    FailedReadField{ name: String },
+    #[error("Failed to read field {name}: {err}")]
+    FailedReadField{ name: String, err: postgres::Error },
 
     #[error("Failed get pre-accounts {signature}: {err}")]
     FailedGetPreAccounts{ signature: Signature, err: postgres::Error },
@@ -275,23 +315,28 @@ impl DumperDb {
 
     fn read_account(row: &Row) -> Result<AccountSharedData, DumperDbError> {
         let lamports: i64 = row.try_get(0).map_err(|err| DumperDbError::FailedReadField {
-            name: "lamports".to_string()
+            name: "lamports".to_string(),
+            err
         })?;
 
         let data = row.try_get(1).map_err(|err| DumperDbError::FailedReadField {
-            name: "data".to_string()
+            name: "data".to_string(),
+            err
         })?;
 
         let owner: Vec<u8>= row.try_get(2).map_err(|err| DumperDbError::FailedReadField {
-            name: "owner".to_string()
+            name: "owner".to_string(),
+            err
         })?;
 
         let executable = row.try_get(3).map_err(|err| DumperDbError::FailedReadField {
-            name: "executable".to_string()
+            name: "executable".to_string(),
+            err
         })?;
 
         let rent_epoch: i64 = row.try_get(4).map_err(|err| DumperDbError::FailedReadField {
-            name: "rent_epoch".to_string()
+            name: "rent_epoch".to_string(),
+            err
         })?;
 
         let account = AccountSharedData::create(
@@ -348,7 +393,7 @@ impl DumperDb {
         let row = &rows[0];
 
         let blockhash: String = row.try_get(1)
-            .map_err(|err| DumperDbError::FailedReadField { name: "blockhash".to_string() })?;
+            .map_err(|err| DumperDbError::FailedReadField { name: "blockhash".to_string(), err })?;
         let block_time = row.try_get(3)
             .map_or_else(|_| None, |value| Some(value));
         let block_height = row.try_get(4)
@@ -381,7 +426,7 @@ impl DumperDb {
         }
 
         let slot: i64 = rows[0].try_get(0)
-            .map_err(|err| DumperDbError::FailedReadField { name: "slot".to_string() })?;
+            .map_err(|err| DumperDbError::FailedReadField { name: "slot".to_string(), err })?;
         Ok(slot as u64)
     }
 
@@ -476,7 +521,7 @@ impl DumperDb {
         )?;
 
         let signatures:Vec<Vec<u8>> = rows[0].try_get(6)
-            .map_err(|err| DumperDbError::FailedReadField { name: "signatures".to_string() })?;
+            .map_err(|err| DumperDbError::FailedReadField { name: "signatures".to_string(), err })?;
 
         let versioned_transaction = SanitizedVersionedTransaction::try_new(
             VersionedTransaction {
@@ -486,10 +531,10 @@ impl DumperDb {
             .map_err(|err| DumperDbError::FailedCreateVersionedTransaction{ signature: signature.clone(), err })?;
 
         let is_vote: bool = rows[0].try_get(2)
-            .map_err(|err| DumperDbError::FailedReadField { name: "is_vote".to_string() })?;
+            .map_err(|err| DumperDbError::FailedReadField { name: "is_vote".to_string(), err })?;
 
         let message_hash: Vec<u8> = rows[0].try_get(7)
-            .map_err(|err| DumperDbError::FailedReadField { name: "message_hash".to_string() })?;
+            .map_err(|err| DumperDbError::FailedReadField { name: "message_hash".to_string(), err })?;
         let message_hash = Hash::new(&message_hash);
 
         SanitizedTransaction::try_new(
@@ -542,7 +587,7 @@ impl DumperDb {
         for row in rows {
             let account = Self::read_account(&row)?;
             let pubkey: Vec<u8> = row.try_get(5)
-                .map_err(|err| DumperDbError::FailedReadField { name: "pubkey".to_string() })?;
+                .map_err(|err| DumperDbError::FailedReadField { name: "pubkey".to_string(), err })?;
 
             result.insert(Pubkey::new(&pubkey), account);
         }
@@ -573,10 +618,10 @@ impl DumperDb {
         let mut result = BTreeMap::new();
         for row in rows {
             let slot: i64 = row.try_get(0)
-                .map_err(|err| DumperDbError::FailedReadField { name: "slot".to_string() })?;
+                .map_err(|err| DumperDbError::FailedReadField { name: "slot".to_string(), err })?;
 
             let blockhash: String = row.try_get(1)
-                .map_err(|err| DumperDbError::FailedReadField { name: "blockhash".to_string() })?;
+                .map_err(|err| DumperDbError::FailedReadField { name: "blockhash".to_string(), err })?;
 
             result.insert(slot as u64, blockhash);
         }

@@ -1,5 +1,5 @@
 use {
-    crate::{ ancestors::Ancestors, dumper_db::DumperDb },
+    crate::{ ancestors::Ancestors, neon_dumperdb::DumperDb },
     solana_sdk::{
         clock::Slot,
         pubkey::Pubkey,
@@ -38,6 +38,10 @@ impl DumperDbBank {
         }
     }
 
+    pub fn is_initialized(&self) -> bool {
+        return self.dumper_db.is_some();
+    }
+
     pub fn set_enable_loading_from_dumper_db(&self, enable: bool) {
         if let Ok(mut enable_loading) = self.enable_loading_from_db.lock() {
             enable_loading.set_enable_loading(enable);
@@ -52,7 +56,7 @@ impl DumperDbBank {
                 error!("{}", msg);
                 None
             }
-            Ok(mut account_cache) => {
+            Ok(account_cache) => {
                 Some(account_cache.clone())
             }
         }
@@ -94,9 +98,9 @@ impl DumperDbBank {
 
     pub fn load_account(
         &self,
-        ancestors: &Ancestors,
+        _ancestors: &Ancestors,
         pubkey: &Pubkey,
-        max_root: Option<Slot>
+        _max_root: Option<Slot>
     ) -> Option<(AccountSharedData, Slot)> {
 
         debug!("Loading account {}", pubkey);

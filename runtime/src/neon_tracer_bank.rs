@@ -4,8 +4,8 @@ use {
         accounts_db::AccountsDb,
         bank::{ Bank, BankFieldsToDeserialize, BankRc, TransactionSimulationResult },
         builtins::Builtins,
-        dumper_db::{ DumperDb, DumperDbError },
-        dumperdb_bank::DumperDbBank
+        neon_dumperdb::{ DumperDb, DumperDbError },
+        neon_dumperdb_bank::DumperDbBank
     },
     solana_sdk::{
         account::{ AccountSharedData, from_account },
@@ -48,7 +48,6 @@ pub enum BankCreationError {
     BlockHeightNotSpecified,
 }
 
-#[cfg(feature = "tracer")]
 impl Bank {
     #[allow(clippy::float_cmp)]
     pub fn new_for_tracer(

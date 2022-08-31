@@ -47,7 +47,7 @@ use {
         bank::Rewrites,
         cache_hash_data::CacheHashData,
         contains::Contains,
-        dumperdb_bank::DumperDbBank,
+        neon_dumperdb_bank::DumperDbBank,
         expected_rent_collection::{ExpectedRentCollection, SlotInfoInEpoch},
         pubkey_bins::PubkeyBinCalculator24,
         read_only_accounts_cache::ReadOnlyAccountsCache,
@@ -75,8 +75,8 @@ use {
         hash::Hash,
         pubkey::Pubkey,
         rent::Rent,
-        signature::Signature,
         timing::AtomicInterval,
+        transaction::SanitizedTransaction,
     },
     std::{
         borrow::{Borrow, Cow},
@@ -4572,7 +4572,6 @@ impl AccountsDb {
 
     /// if 'load_into_read_cache_only', then return value is meaningless.
     ///   The goal is to get the account into the read-only cache.
-    #[cfg(not(feature = "tracer"))]
     fn do_load_with_populate_read_cache(
         &self,
         ancestors: &Ancestors,
@@ -4583,6 +4582,11 @@ impl AccountsDb {
     ) -> Option<(AccountSharedData, Slot)> {
         #[cfg(not(test))]
         assert!(max_root.is_none());
+
+        #[cfg(feature = "tracer")]
+        if self.dumper_db.is_initialized() {
+            return self.do_load_from_dumper_db(ancestors, pubkey, max_root, load_hint, load_into_read_cache_only);
+        }
 
         let (slot, storage_location, _maybe_account_accesor) =
             self.read_index_for_accessor_or_load_slow(ancestors, pubkey, max_root, false)?;
@@ -4641,16 +4645,14 @@ impl AccountsDb {
         Some((account, slot))
     }
 
-    /// if 'load_into_read_cache_only', then return value is meaningless.
-    ///   The goal is to get the account into the read-only cache.
     #[cfg(feature = "tracer")]
-    fn do_load_with_populate_read_cache(
+    fn do_load_from_dumper_db(
         &self,
         ancestors: &Ancestors,
         pubkey: &Pubkey,
         max_root: Option<Slot>,
-        load_hint: LoadHint,
-        load_into_read_cache_only: bool,
+        _load_hint: LoadHint,
+        _load_into_read_cache_only: bool,
     ) -> Option<(AccountSharedData, Slot)> {
         self.dumper_db.load_account(ancestors, pubkey, max_root)
     }
@@ -5880,7 +5882,7 @@ impl AccountsDb {
         slot: Slot,
         hashes: Option<&[impl Borrow<Hash>]>,
         accounts_and_meta_to_store: &[(StoredMeta, Option<&impl ReadableAccount>)],
-        txn_signatures_iter: Box<dyn std::iter::Iterator<Item = &Option<&Signature>> + 'a>,
+        txn_iter: Box<dyn std::iter::Iterator<Item = &Option<&SanitizedTransaction>> + 'a>,
     ) -> Vec<AccountInfo> {
         let len = accounts_and_meta_to_store.len();
         let hashes = hashes.map(|hashes| {
@@ -5890,9 +5892,9 @@ impl AccountsDb {
 
         accounts_and_meta_to_store
             .iter()
-            .zip(txn_signatures_iter)
+            .zip(txn_iter)
             .enumerate()
-            .map(|(i, ((meta, account), signature))| {
+            .map(|(i, ((meta, account), tx))| {
                 let hash = hashes.map(|hashes| hashes[i].borrow());
 
                 let account = account
@@ -5904,7 +5906,7 @@ impl AccountsDb {
                     account.lamports(),
                 );
 
-                self.notify_account_at_accounts_update(slot, meta, &account, signature);
+                self.notify_account_at_accounts_update(slot, meta, &account, tx);
 
                 let cached_account = self.accounts_cache.store(slot, &meta.pubkey, account, hash);
                 // hash this account in the bg
@@ -5931,7 +5933,7 @@ impl AccountsDb {
         storage_finder: F,
         mut write_version_producer: P,
         is_cached_store: bool,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) -> Vec<AccountInfo> {
         let mut calc_stored_meta_time = Measure::start("calc_stored_meta");
         let slot = accounts.target_slot();
@@ -5962,18 +5964,18 @@ impl AccountsDb {
             .fetch_add(calc_stored_meta_time.as_us(), Ordering::Relaxed);
 
         if self.caching_enabled && is_cached_store {
-            let signature_iter: Box<dyn std::iter::Iterator<Item = &Option<&Signature>>> =
-                match txn_signatures {
-                    Some(txn_signatures) => {
-                        assert_eq!(txn_signatures.len(), accounts_and_meta_to_store.len());
-                        Box::new(txn_signatures.iter())
+            let trx_iter: Box<dyn std::iter::Iterator<Item = &Option<&SanitizedTransaction>>> =
+                match transactions {
+                    Some(transactions) => {
+                        assert_eq!(transactions.len(), accounts_and_meta_to_store.len());
+                        Box::new(transactions.iter())
                     }
                     None => {
                         Box::new(std::iter::repeat(&None).take(accounts_and_meta_to_store.len()))
                     }
                 };
 
-            self.write_accounts_to_cache(slot, hashes, &accounts_and_meta_to_store, signature_iter)
+            self.write_accounts_to_cache(slot, hashes, &accounts_and_meta_to_store, trx_iter)
         } else {
             match hashes {
                 Some(hashes) => self.write_accounts_to_storage(
@@ -7487,9 +7489,9 @@ impl AccountsDb {
     pub fn store_cached<'a, T: ReadableAccount + Sync + ZeroLamport>(
         &self,
         accounts: impl StorableAccounts<'a, T>,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) {
-        self.store(accounts, self.caching_enabled, txn_signatures);
+        self.store(accounts, self.caching_enabled, transactions);
     }
 
     /// Store the account update.
@@ -7498,13 +7500,18 @@ impl AccountsDb {
         self.store((slot, accounts), false, None);
     }
 
-    #[cfg(not(feature = "tracer"))]
     fn store<'a, T: ReadableAccount + Sync + ZeroLamport>(
         &self,
         accounts: impl StorableAccounts<'a, T>,
         is_cached_store: bool,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) {
+        #[cfg(feature = "tracer")]
+        if self.dumper_db.is_initialized() {
+            self.store_to_dumper_db(accounts, is_cached_store, transactions);
+            return;
+        }
+
         // If all transactions in a batch are errored,
         // it's possible to get a store with no accounts.
         if accounts.is_empty() {
@@ -7533,16 +7540,16 @@ impl AccountsDb {
         }
 
         // we use default hashes for now since the same account may be stored to the cache multiple times
-        self.store_accounts_unfrozen(accounts, None, is_cached_store, txn_signatures);
+        self.store_accounts_unfrozen(accounts, None, is_cached_store, transactions);
         self.report_store_timings();
     }
 
     #[cfg(feature = "tracer")]
-    fn store<'a, T: ReadableAccount + Sync + ZeroLamport>(
+    fn store_to_dumper_db<'a, T: ReadableAccount + Sync + ZeroLamport>(
         &self,
-        accounts: impl StorableAccounts<'a, T>,
-        is_cached_store: bool,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        _accounts: impl StorableAccounts<'a, T>,
+        _is_cached_store: bool,
+        _transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) {
         todo!()
     }
@@ -7670,7 +7677,7 @@ impl AccountsDb {
         accounts: impl StorableAccounts<'a, T>,
         hashes: Option<&[&Hash]>,
         is_cached_store: bool,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) {
         // This path comes from a store to a non-frozen slot.
         // If a store is dead here, then a newer update for
@@ -7687,7 +7694,7 @@ impl AccountsDb {
             None::<Box<dyn Iterator<Item = u64>>>,
             is_cached_store,
             reset_accounts,
-            txn_signatures,
+            transactions,
         );
     }
 
@@ -7722,7 +7729,7 @@ impl AccountsDb {
         write_version_producer: Option<Box<dyn Iterator<Item = u64>>>,
         is_cached_store: bool,
         reset_accounts: bool,
-        txn_signatures: Option<&'b [Option<&'b Signature>]>,
+        transactions: Option<&'b [Option<&'b SanitizedTransaction>]>,
     ) -> StoreAccountsTiming {
         let storage_finder = Box::new(move |slot, size| {
             storage
@@ -7750,7 +7757,7 @@ impl AccountsDb {
             storage_finder,
             write_version_producer,
             is_cached_store,
-            txn_signatures,
+            transactions,
         );
         store_accounts_time.stop();
         self.stats
