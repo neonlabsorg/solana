@@ -470,3 +470,44 @@ BEGIN
         WHERE b.slot = ANY(branch_slots);
 END;
 $get_recent_blockhashes$ LANGUAGE plpgsql;
+
+-----------------------------------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION numeric_to_bytea(_n NUMERIC) RETURNS BYTEA AS $numeric_to_bytea$
+DECLARE
+    _b BYTEA := '\x';
+    _v INTEGER;
+BEGIN
+    WHILE _n > 0 LOOP
+            _v := _n % 256;
+            _b := SET_BYTE(('\x00' || _b),0,_v);
+            _n := (_n-_v)/256;
+        END LOOP;
+    RETURN _b;
+END;
+$numeric_to_bytea$ LANGUAGE PLPGSQL IMMUTABLE STRICT;
+
+-----------------------------------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION base58_to_bytea(str VARCHAR(255)) RETURNS BYTEA AS $base58_to_bytea$
+DECLARE
+    alphabet VARCHAR(255);
+    c CHAR(1);
+    p INT;
+    v NUMERIC(155);
+BEGIN
+    alphabet := '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    v := 0;
+    FOR i IN 1..char_length(str) LOOP
+            c := substring(str FROM i FOR 1);
+            -- This is probably wildly inefficient, but we're just using this function for diagnostics...
+            p := position(c IN alphabet);
+            IF p = 0 THEN
+                RAISE 'Illegal base58 character ''%'' in ''%''', c, str;
+            END IF;
+            v := (v * 58) + (p - 1);
+        END LOOP;
+
+    RETURN numeric_to_bytea(v);
+END;
+$base58_to_bytea$ LANGUAGE PLPGSQL;
