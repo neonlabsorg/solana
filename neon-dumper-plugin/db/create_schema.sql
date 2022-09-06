@@ -222,9 +222,7 @@ CREATE TABLE account_audit (
     txn_signature BYTEA
 );
 
-CREATE INDEX account_audit_account_key ON  account_audit (pubkey, write_version);
-
-CREATE INDEX account_audit_pubkey_slot ON account_audit (pubkey, slot);
+CREATE INDEX account_audit_pubkey_slot_wv ON  account_audit (pubkey, slot, write_version);
 
 CREATE FUNCTION audit_account_update() RETURNS trigger AS $audit_account_update$
     BEGIN

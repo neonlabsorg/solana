@@ -386,8 +386,8 @@ END;
 $get_pre_accounts$ LANGUAGE plpgsql;
 
 -----------------------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION get_accounts_at_slot(
-    in_pubkeys BYTEA[],
+CREATE OR REPLACE FUNCTION get_account_at_slot(
+    in_pubkey BYTEA,
     in_slot BIGINT
 )
 
@@ -403,7 +403,7 @@ RETURNS TABLE (
     signature BYTEA
 )
 
-AS $get_accounts_at_slot$
+AS $get_account_at_slot$
 
 BEGIN
     RETURN QUERY
@@ -420,12 +420,12 @@ BEGIN
         FROM account_audit AS acc
         WHERE
             acc.slot <= in_slot
-            AND acc.pubkey = ANY(in_pubkeys)
+            AND acc.pubkey = in_pubkey
         ORDER BY
             acc.slot DESC, acc.write_version DESC
         LIMIT 1;
 END;
-$get_accounts_at_slot$ LANGUAGE plpgsql;
+$get_account_at_slot$ LANGUAGE plpgsql;
 
 -----------------------------------------------------------------------------------------------------------------------
 

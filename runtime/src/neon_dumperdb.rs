@@ -67,7 +67,7 @@ pub struct DbTransactionMessageV0 {
 
 pub struct DumperDb {
     client: Mutex<Client>,
-    get_accounts_at_slot_statement: Statement,
+    get_account_at_slot_statement: Statement,
     get_block_statement: Statement,
     get_transaction_statement: Statement,
     get_pre_accounts_statement: Statement,
@@ -236,8 +236,8 @@ impl DumperDb {
         }
     }
 
-    fn create_get_accounts_at_slot_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
-        let stmt = "SELECT lamports, data, owner, executable, rent_epoch FROM get_accounts_at_slot($1, $2)";
+    fn create_get_account_at_slot_statement(client: &mut Client) -> Result<Statement, DumperDbError> {
+        let stmt = "SELECT lamports, data, owner, executable, rent_epoch FROM get_account_at_slot($1, $2)";
         let stmt = client.prepare(stmt);
         stmt.map_err(|err| {
             let msg = format!("Failed to prepare get_account_at_slot statement: {}", err);
@@ -294,7 +294,7 @@ impl DumperDb {
         info!("Creating Postgres Client...");
         let mut client = Self::connect_to_db(config)?;
 
-        let get_accounts_at_slot_statement = Self::create_get_accounts_at_slot_statement(&mut client)?;
+        let get_account_at_slot_statement = Self::create_get_account_at_slot_statement(&mut client)?;
         let get_block_statement = Self::create_get_block_statement(&mut client)?;
         let get_transaction_statement = Self::create_get_transaction_statement(&mut client)?;
         let get_pre_accounts_statement = Self::create_get_pre_accounts_statement(&mut client)?;
@@ -304,7 +304,7 @@ impl DumperDb {
         info!("Created Postgres Client.");
         Ok(Self {
             client: Mutex::new(client),
-            get_accounts_at_slot_statement,
+            get_account_at_slot_statement,
             get_block_statement,
             get_transaction_statement,
             get_pre_accounts_statement,
@@ -362,11 +362,10 @@ impl DumperDb {
         let mut client = self.lock_client()?;
 
         let pubkey_bytes = pubkey.to_bytes();
-        let pubkeys = vec!(pubkey_bytes.as_slice());
         let rows = client.query(
-            &self.get_accounts_at_slot_statement,
+            &self.get_account_at_slot_statement,
             &[
-                &pubkeys,
+                &pubkey_bytes.as_slice(),
                 &(slot as i64),
             ]
         ).map_err(|err| DumperDbError::LoadAccError { pubkey: pubkey.clone(), slot, err })?;
