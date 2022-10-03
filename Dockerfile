@@ -40,4 +40,3 @@ COPY --from=builder /opt/fetch-spl.sh /opt/solana/bin/
 
 COPY --from=spl-token-builder /opt/spl-token /usr/bin/
 
-COPY ./accountsdb-plugin-config.json /opt/
