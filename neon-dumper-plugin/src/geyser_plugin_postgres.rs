@@ -81,6 +81,10 @@ pub struct GeyserPluginPostgresConfig {
 
     /// Controls whetherf to index the token mints. The default is false
     pub index_token_mint: Option<bool>,
+
+    pub reconnect_num_retries: Option<u32>,
+
+    pub reconnect_retry_interval_sec: Option<u16>,
 }
 
 #[derive(Error, Debug)]

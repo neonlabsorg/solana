@@ -76,6 +76,8 @@ struct PostgresClientWorker {
     client: SimplePostgresClient,
     /// Indicating if accounts notification during startup is done.
     is_startup_done: bool,
+
+    config: GeyserPluginPostgresConfig,
 }
 
 impl Eq for DbAccountInfo {}
@@ -936,17 +938,56 @@ enum DbWorkItem {
     UpdateBlockMetadata(Box<UpdateBlockMetadataRequest>),
 }
 
+const RECONNECT_RETRIES_DEFAULT: u32 = u32::MAX;
+const RECONNECT_RETRY_INTERVAL_DEFAULT: u16 = 10;
+
 impl PostgresClientWorker {
     fn new(config: GeyserPluginPostgresConfig) -> Result<Self, GeyserPluginError> {
-        let result = SimplePostgresClient::new(&config);
+        let result = Self::try_connect(&config);
         match result {
             Ok(client) => Ok(PostgresClientWorker {
                 client,
                 is_startup_done: false,
+                config,
             }),
             Err(err) => {
                 error!("Error in creating SimplePostgresClient: {}", err);
                 Err(err)
+            }
+        }
+    }
+
+    fn try_connect(config: &GeyserPluginPostgresConfig) -> Result<SimplePostgresClient, GeyserPluginError> {
+        let mut retries = config.reconnect_num_retries.unwrap_or(RECONNECT_RETRIES_DEFAULT);
+        let retry_interval_sec = config.reconnect_retry_interval_sec.unwrap_or(RECONNECT_RETRY_INTERVAL_DEFAULT);
+        let mut result: Result<SimplePostgresClient, GeyserPluginError> = Err(GeyserPluginError::DbConnectionError);
+        while retries > 0 {
+            info!("Trying to connect to DB... ({} attempts left)", retries);
+            result = SimplePostgresClient::new(&config);
+            if result.is_err() {
+                error!("Failed to connect to DB. Retry after {} seconds.", retry_interval_sec);
+                retries -= 1;
+                std::thread::sleep(std::time::Duration::from_secs(retry_interval_sec as u64));
+                continue;
+            }
+
+            break;
+        };
+
+        result
+    }
+
+    fn check_client_connection(&mut self, exit_worker: Arc<AtomicBool>) {
+        let client = self.client.client.get_mut().unwrap();
+        if client.client.is_closed() {
+            error!("Worker connection already closed. Trying to reconnect");
+            let new_client = Self::try_connect(&self.config);
+            match new_client {
+                Ok(new_client) => self.client = new_client,
+                Err(err) => {
+                    error!("Failed to reconnect: {}. Stop worker", err);
+                    exit_worker.store(true, Ordering::Relaxed);
+                }
             }
         }
     }
@@ -960,6 +1001,8 @@ impl PostgresClientWorker {
         panic_on_db_errors: bool,
     ) -> Result<(), GeyserPluginError> {
         while !exit_worker.load(Ordering::Relaxed) {
+            self.check_client_connection(exit_worker.clone());
+
             let mut measure = Measure::start("geyser-plugin-postgres-worker-recv");
             let work = receiver.recv_timeout(Duration::from_millis(500));
             measure.stop();

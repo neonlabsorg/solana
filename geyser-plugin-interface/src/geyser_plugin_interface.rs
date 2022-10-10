@@ -145,6 +145,9 @@ pub enum GeyserPluginError {
     /// Error when updating the transaction.
     #[error("Error updating transaction. Error message: ({msg})")]
     TransactionUpdateError { msg: String },
+
+    #[error("Failed to establish database connection")]
+    DbConnectionError,
 }
 
 /// The current status of a slot
