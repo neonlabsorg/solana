@@ -1100,7 +1100,7 @@ impl PostgresClientWorker {
             .collect();
 
         // Remove works for processing from queue
-        self.postponed_works.retain(|postpone_time, _| current_time >= *postpone_time );
+        self.postponed_works.retain(|postpone_time, _| current_time < *postpone_time );
 
         // Try to process works and collect failed works for retry later
         let mut for_retry: BTreeMap<u64, Vec<DbWorkItem>> = for_processing.into_iter()
