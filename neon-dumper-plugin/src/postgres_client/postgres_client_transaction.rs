@@ -134,6 +134,7 @@ pub struct DbLoadedMessageV0 {
     pub loaded_addresses: DbLoadedAddresses,
 }
 
+#[derive(Clone)]
 pub struct DbTransaction {
     pub signature: Vec<u8>,
     pub is_vote: bool,
@@ -147,6 +148,7 @@ pub struct DbTransaction {
     pub index: i64,
 }
 
+#[derive(Clone)]
 pub struct LogTransactionRequest {
     pub transaction_info: DbTransaction,
 }

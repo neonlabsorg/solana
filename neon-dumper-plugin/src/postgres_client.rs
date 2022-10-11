@@ -85,6 +85,9 @@ struct PostgresClientWorker {
 
     /// Time when worker started
     start_time: std::time::Instant,
+
+    /// Work postpone interval
+    postpone_interval: u64,
 }
 
 impl Eq for DbAccountInfo {}
@@ -922,22 +925,26 @@ impl PostgresClient for SimplePostgresClient {
     }
 }
 
+#[derive(Clone)]
 struct UpdateAccountRequest {
     account: DbAccountInfo,
     is_startup: bool,
 }
 
+#[derive(Clone)]
 struct UpdateSlotRequest {
     slot: u64,
     parent: Option<u64>,
     slot_status: SlotStatus,
 }
 
+#[derive(Clone)]
 pub struct UpdateBlockMetadataRequest {
     pub block_info: DbBlockInfo,
 }
 
 #[warn(clippy::large_enum_variant)]
+#[derive(Clone)]
 enum DbWorkItem {
     UpdateAccount(Box<UpdateAccountRequest>),
     UpdateSlot(Box<UpdateSlotRequest>),
@@ -953,6 +960,7 @@ impl PostgresClientWorker {
     fn new(config: GeyserPluginPostgresConfig) -> Result<Self, GeyserPluginError> {
         let client_res = Self::try_connect(&config);
         let start_time = std::time::Instant::now();
+        let postpone_interval = config.work_postpone_interval_sec.unwrap_or(WORK_POSTPONE_INTERVAL_SEC_DEFAULT);
         match client_res {
             Ok(client) => Ok(PostgresClientWorker {
                 client,
@@ -960,6 +968,7 @@ impl PostgresClientWorker {
                 config,
                 postponed_works: BTreeMap::new(),
                 start_time,
+                postpone_interval,
             }),
             Err(err) => {
                 error!("Error in creating SimplePostgresClient: {}", err);
@@ -1042,14 +1051,50 @@ impl PostgresClientWorker {
     }
 
     fn postpone_work(&mut self, work: DbWorkItem) {
-        let delay = self.config.work_postpone_interval_sec.unwrap_or(WORK_POSTPONE_INTERVAL_SEC_DEFAULT);
-        let postpone_time = std::time::Instant::now().duration_since(self.start_time).as_secs() + delay;
+        let postpone_time = std::time::Instant::now().duration_since(self.start_time).as_secs() + self.postpone_interval;
 
         if let Some(works) = self.postponed_works.get_mut(&postpone_time) {
             works.push(work);
         } else {
             self.postponed_works.insert(postpone_time, vec![work]);
         }
+    }
+
+    fn process_postponed_works(&mut self) {
+        let current_time = std::time::Instant::now().duration_since(self.start_time).as_secs();
+
+        // Select works for processing
+        let for_processing: BTreeMap<u64, Vec<DbWorkItem>> = self.postponed_works.iter()
+            .map_while(|(postpone_time, works)| {
+                if current_time < *postpone_time {
+                    return None;
+                }
+
+                Some((*postpone_time, works.clone()))
+            })
+            .collect();
+
+        // Remove works for processing from queue
+        self.postponed_works.retain(|postpone_time, _| current_time >= *postpone_time );
+
+        // Try to process works and collect failed works for retry later
+        let mut for_retry: BTreeMap<u64, Vec<DbWorkItem>> = for_processing.into_iter()
+            .filter_map(|(postpone_time, works)| {
+                let retry_vec: Vec<DbWorkItem> = works.into_iter()
+                    .filter(|work| !self.process_work(work))
+                    .collect();
+
+                if retry_vec.is_empty() {
+                    return None
+                }
+
+                let new_postpone_time = postpone_time + self.postpone_interval;
+                Some((new_postpone_time, retry_vec))
+            })
+            .collect();
+
+        // add failed works back to queue again
+        self.postponed_works.append(&mut for_retry);
     }
 
     fn do_work(
@@ -1062,6 +1107,7 @@ impl PostgresClientWorker {
     ) -> Result<(), GeyserPluginError> {
         while !exit_worker.load(Ordering::Relaxed) {
             self.check_client_connection(exit_worker.clone());
+            self.process_postponed_works();
 
             let mut measure = Measure::start("geyser-plugin-postgres-worker-recv");
             let work = receiver.recv_timeout(Duration::from_millis(500));
