@@ -980,7 +980,10 @@ impl PostgresClientWorker {
     fn try_connect(config: &GeyserPluginPostgresConfig) -> Result<SimplePostgresClient, GeyserPluginError> {
         let mut retries = config.reconnect_num_retries.unwrap_or(RECONNECT_RETRIES_DEFAULT);
         let retry_interval_sec = config.reconnect_retry_interval_sec.unwrap_or(RECONNECT_RETRY_INTERVAL_DEFAULT);
-        let mut result: Result<SimplePostgresClient, GeyserPluginError> = Err(GeyserPluginError::DbConnectionError);
+        let mut result: Result<SimplePostgresClient, GeyserPluginError> =
+            Err(GeyserPluginError::Custom(Box::new(
+                GeyserPluginPostgresError::DataSchemaError { msg: "Failed to reconnect".to_string() }
+            )));
         while retries > 0 {
             info!("Trying to connect to DB... ({} attempts left)", retries);
             result = SimplePostgresClient::new(&config);
