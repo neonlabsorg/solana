@@ -83,11 +83,16 @@ impl SimplePostgresClient {
         );
 
         if let Err(err) = result {
+            if err.is_closed() {
+                error!("Database connection closed");
+                return Err(GeyserPluginError::DBConnectionClosed);
+            }
+
             let msg = format!(
                 "Failed to persist the update of block metadata to the PostgreSQL database. Error: {:?}",
                 err);
             error!("{}", msg);
-            return Err(GeyserPluginError::AccountsUpdateError { msg });
+            return Err(GeyserPluginError::BlockMetadataUpdateError { msg });
         }
 
         Ok(())

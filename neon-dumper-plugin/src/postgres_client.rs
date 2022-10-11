@@ -537,6 +537,11 @@ impl SimplePostgresClient {
         );
 
         if let Err(err) = result {
+            if err.is_closed() {
+                error!("Database connection closed");
+                return Err(GeyserPluginError::DBConnectionClosed);
+            }
+
             let msg = format!(
                 "Failed to persist the insert of account_audit to the PostgreSQL database. Error: {:?}",
                 err
@@ -576,6 +581,11 @@ impl SimplePostgresClient {
         );
 
         if let Err(err) = result {
+            if err.is_closed() {
+                error!("Database connection closed");
+                return Err(GeyserPluginError::DBConnectionClosed);
+            }
+
             let msg = format!(
                 "Failed to persist the update of account to the PostgreSQL database. Error: {:?}",
                 err
@@ -671,6 +681,11 @@ impl SimplePostgresClient {
             self.pending_account_updates.clear();
 
             if let Err(err) = result {
+                if err.is_closed() {
+                    error!("Database connection closed");
+                    return Err(GeyserPluginError::DBConnectionClosed);
+                }
+
                 let msg = format!(
                     "Failed to persist the update of account to the PostgreSQL database. Error: {:?}",
                     err
@@ -764,6 +779,11 @@ impl SimplePostgresClient {
 
         match result {
             Err(err) => {
+                if err.is_closed() {
+                    error!("Database connection closed");
+                    return Err(GeyserPluginError::DBConnectionClosed);
+                }
+
                 let msg = format!(
                     "Failed to persist the update of slot to the PostgreSQL database. Error: {:?}",
                     err
@@ -1015,42 +1035,44 @@ impl PostgresClientWorker {
         }
     }
 
-    fn process_work(&mut self, work: &DbWorkItem) -> bool {
-        match work {
-            DbWorkItem::UpdateAccount(request) => {
-                if let Err(err) = self
-                    .client
-                    .update_account(&request.account, request.is_startup)
-                {
-                    error!("Failed to update account: ({})", err);
-                    return false;
-                }
-            }
-            DbWorkItem::UpdateSlot(request) => {
-                if let Err(err) = self.client.update_slot_status(
+    fn try_process_work(
+        &mut self,
+        panic_on_db_errors: bool,
+        work: &DbWorkItem,
+        exit_worker: Arc<AtomicBool>,
+    ) -> bool {
+        if let Err(err) = match work {
+            DbWorkItem::UpdateAccount(request) =>
+                self.client.update_account(&request.account, request.is_startup),
+            DbWorkItem::UpdateSlot(request) => self.client.update_slot_status(
                     request.slot,
                     request.parent,
                     request.slot_status,
-                ) {
-                    error!("Failed to update slot: ({})", err);
-                    return false;
+                ),
+            DbWorkItem::LogTransaction(transaction_log_info) =>
+                self.client.log_transaction(transaction_log_info),
+            DbWorkItem::UpdateBlockMetadata(block_info) =>
+                self.client.update_block_metadata(block_info),
+        } {
+            if panic_on_db_errors {
+                abort()
+            }
+
+            if let GeyserPluginError::DBConnectionClosed = err {
+                let new_client = Self::try_connect(&self.config);
+                match new_client {
+                    Ok(new_client) => self.client = new_client,
+                    Err(err) => {
+                        error!("Failed to reconnect: {}. Stop worker", err);
+                        exit_worker.store(true, Ordering::Relaxed);
+                    }
                 }
             }
-            DbWorkItem::LogTransaction(transaction_log_info) => {
-                if let Err(err) = self.client.log_transaction(transaction_log_info) {
-                    error!("Failed to update transaction: ({})", err);
-                    return false;
-                }
-            }
-            DbWorkItem::UpdateBlockMetadata(block_info) => {
-                if let Err(err) = self.client.update_block_metadata(block_info) {
-                    error!("Failed to update block metadata: ({})", err);
-                    return false;
-                }
-            }
+
+            return false;
         }
 
-        true
+        return true;
     }
 
     fn postpone_work(&mut self, work: DbWorkItem) {
@@ -1063,7 +1085,7 @@ impl PostgresClientWorker {
         }
     }
 
-    fn process_postponed_works(&mut self) {
+    fn process_postponed_works(&mut self, exit_worker: Arc<AtomicBool>) {
         let current_time = std::time::Instant::now().duration_since(self.start_time).as_secs();
 
         // Select works for processing
@@ -1084,7 +1106,7 @@ impl PostgresClientWorker {
         let mut for_retry: BTreeMap<u64, Vec<DbWorkItem>> = for_processing.into_iter()
             .filter_map(|(postpone_time, works)| {
                 let retry_vec: Vec<DbWorkItem> = works.into_iter()
-                    .filter(|work| !self.process_work(work))
+                    .filter(|work| !self.try_process_work(false, work, exit_worker.clone()))
                     .collect();
 
                 if retry_vec.is_empty() {
@@ -1110,7 +1132,7 @@ impl PostgresClientWorker {
     ) -> Result<(), GeyserPluginError> {
         while !exit_worker.load(Ordering::Relaxed) {
             self.check_client_connection(exit_worker.clone());
-            self.process_postponed_works();
+            self.process_postponed_works(exit_worker.clone());
 
             let mut measure = Measure::start("geyser-plugin-postgres-worker-recv");
             let work = receiver.recv_timeout(Duration::from_millis(500));
@@ -1123,11 +1145,7 @@ impl PostgresClientWorker {
             );
             match work {
                 Ok(work) => {
-                    if !self.process_work(&work) {
-                        if panic_on_db_errors {
-                            abort()
-                        }
-
+                    if !self.try_process_work(panic_on_db_errors, &work, exit_worker.clone()) {
                         self.postpone_work(work);
                     }
                 },
