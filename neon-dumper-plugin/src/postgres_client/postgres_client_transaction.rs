@@ -552,14 +552,14 @@ impl SimplePostgresClient {
 
     pub(crate) fn log_transaction_impl(
         &mut self,
-        transaction_log_info: LogTransactionRequest,
+        transaction_log_info: &LogTransactionRequest,
     ) -> Result<(), GeyserPluginError> {
         let client = self.client.get_mut().unwrap();
         let statement = &client.update_transaction_log_stmt;
         let client = &mut client.client;
         let updated_on = Utc::now().naive_utc();
 
-        let transaction_info = transaction_log_info.transaction_info;
+        let transaction_info = &transaction_log_info.transaction_info;
         let result = client.query(
             statement,
             &[

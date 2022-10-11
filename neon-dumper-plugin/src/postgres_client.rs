@@ -25,7 +25,7 @@ use {
     solana_metrics::*,
     solana_sdk::timing::AtomicInterval,
     std::{
-        collections::HashSet,
+        collections::{ BTreeMap, HashSet },
         sync::{
             atomic::{AtomicBool, AtomicUsize, Ordering},
             Arc, Mutex,
@@ -77,7 +77,14 @@ struct PostgresClientWorker {
     /// Indicating if accounts notification during startup is done.
     is_startup_done: bool,
 
+    /// Client config
     config: GeyserPluginPostgresConfig,
+
+    /// Queue of postponed works. Maps timestamp of execution attempt to work data
+    postponed_works: BTreeMap<u64, Vec<DbWorkItem>>,
+
+    /// Time when worker started
+    start_time: std::time::Instant,
 }
 
 impl Eq for DbAccountInfo {}
@@ -211,7 +218,7 @@ pub trait PostgresClient {
 
     fn update_account(
         &mut self,
-        account: DbAccountInfo,
+        account: &DbAccountInfo,
         is_startup: bool,
     ) -> Result<(), GeyserPluginError>;
 
@@ -226,12 +233,12 @@ pub trait PostgresClient {
 
     fn log_transaction(
         &mut self,
-        transaction_log_info: LogTransactionRequest,
+        transaction_log_info: &LogTransactionRequest,
     ) -> Result<(), GeyserPluginError>;
 
     fn update_block_metadata(
         &mut self,
-        block_info: UpdateBlockMetadataRequest,
+        block_info: &UpdateBlockMetadataRequest,
     ) -> Result<(), GeyserPluginError>;
 }
 
@@ -613,10 +620,10 @@ impl SimplePostgresClient {
     /// Insert accounts in batch to reduce network overhead
     fn insert_accounts_in_batch(
         &mut self,
-        account: DbAccountInfo,
+        account: &DbAccountInfo,
     ) -> Result<(), GeyserPluginError> {
         self.queue_secondary_indexes(&account);
-        self.pending_account_updates.push(account);
+        self.pending_account_updates.push(account.clone());
 
         self.bulk_insert_accounts()?;
         self.bulk_insert_token_owner_index()?;
@@ -862,7 +869,7 @@ impl SimplePostgresClient {
 impl PostgresClient for SimplePostgresClient {
     fn update_account(
         &mut self,
-        account: DbAccountInfo,
+        account: &DbAccountInfo,
         is_startup: bool,
     ) -> Result<(), GeyserPluginError> {
         trace!(
@@ -902,14 +909,14 @@ impl PostgresClient for SimplePostgresClient {
 
     fn log_transaction(
         &mut self,
-        transaction_log_info: LogTransactionRequest,
+        transaction_log_info: &LogTransactionRequest,
     ) -> Result<(), GeyserPluginError> {
         self.log_transaction_impl(transaction_log_info)
     }
 
     fn update_block_metadata(
         &mut self,
-        block_info: UpdateBlockMetadataRequest,
+        block_info: &UpdateBlockMetadataRequest,
     ) -> Result<(), GeyserPluginError> {
         self.update_block_metadata_impl(block_info)
     }
@@ -940,15 +947,19 @@ enum DbWorkItem {
 
 const RECONNECT_RETRIES_DEFAULT: u32 = u32::MAX;
 const RECONNECT_RETRY_INTERVAL_DEFAULT: u16 = 10;
+const WORK_POSTPONE_INTERVAL_SEC_DEFAULT: u64 = 10;
 
 impl PostgresClientWorker {
     fn new(config: GeyserPluginPostgresConfig) -> Result<Self, GeyserPluginError> {
-        let result = Self::try_connect(&config);
-        match result {
+        let client_res = Self::try_connect(&config);
+        let start_time = std::time::Instant::now();
+        match client_res {
             Ok(client) => Ok(PostgresClientWorker {
                 client,
                 is_startup_done: false,
                 config,
+                postponed_works: BTreeMap::new(),
+                start_time,
             }),
             Err(err) => {
                 error!("Error in creating SimplePostgresClient: {}", err);
@@ -992,6 +1003,55 @@ impl PostgresClientWorker {
         }
     }
 
+    fn process_work(&mut self, work: &DbWorkItem) -> bool {
+        match work {
+            DbWorkItem::UpdateAccount(request) => {
+                if let Err(err) = self
+                    .client
+                    .update_account(&request.account, request.is_startup)
+                {
+                    error!("Failed to update account: ({})", err);
+                    return false;
+                }
+            }
+            DbWorkItem::UpdateSlot(request) => {
+                if let Err(err) = self.client.update_slot_status(
+                    request.slot,
+                    request.parent,
+                    request.slot_status,
+                ) {
+                    error!("Failed to update slot: ({})", err);
+                    return false;
+                }
+            }
+            DbWorkItem::LogTransaction(transaction_log_info) => {
+                if let Err(err) = self.client.log_transaction(transaction_log_info) {
+                    error!("Failed to update transaction: ({})", err);
+                    return false;
+                }
+            }
+            DbWorkItem::UpdateBlockMetadata(block_info) => {
+                if let Err(err) = self.client.update_block_metadata(block_info) {
+                    error!("Failed to update block metadata: ({})", err);
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    fn postpone_work(&mut self, work: DbWorkItem) {
+        let delay = self.config.work_postpone_interval_sec.unwrap_or(WORK_POSTPONE_INTERVAL_SEC_DEFAULT);
+        let postpone_time = std::time::Instant::now().duration_since(self.start_time).as_secs() + delay;
+
+        if let Some(works) = self.postponed_works.get_mut(&postpone_time) {
+            works.push(work);
+        } else {
+            self.postponed_works.insert(postpone_time, vec![work]);
+        }
+    }
+
     fn do_work(
         &mut self,
         receiver: Receiver<DbWorkItem>,
@@ -1013,45 +1073,13 @@ impl PostgresClientWorker {
                 100000
             );
             match work {
-                Ok(work) => match work {
-                    DbWorkItem::UpdateAccount(request) => {
-                        if let Err(err) = self
-                            .client
-                            .update_account(request.account, request.is_startup)
-                        {
-                            error!("Failed to update account: ({})", err);
-                            if panic_on_db_errors {
-                                abort();
-                            }
+                Ok(work) => {
+                    if !self.process_work(&work) {
+                        if panic_on_db_errors {
+                            abort()
                         }
-                    }
-                    DbWorkItem::UpdateSlot(request) => {
-                        if let Err(err) = self.client.update_slot_status(
-                            request.slot,
-                            request.parent,
-                            request.slot_status,
-                        ) {
-                            error!("Failed to update slot: ({})", err);
-                            if panic_on_db_errors {
-                                abort();
-                            }
-                        }
-                    }
-                    DbWorkItem::LogTransaction(transaction_log_info) => {
-                        if let Err(err) = self.client.log_transaction(*transaction_log_info) {
-                            error!("Failed to update transaction: ({})", err);
-                            if panic_on_db_errors {
-                                abort();
-                            }
-                        }
-                    }
-                    DbWorkItem::UpdateBlockMetadata(block_info) => {
-                        if let Err(err) = self.client.update_block_metadata(*block_info) {
-                            error!("Failed to update block metadata: ({})", err);
-                            if panic_on_db_errors {
-                                abort();
-                            }
-                        }
+
+                        self.postpone_work(work);
                     }
                 },
                 Err(err) => match err {
