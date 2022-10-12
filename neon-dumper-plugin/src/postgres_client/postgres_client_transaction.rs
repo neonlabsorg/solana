@@ -134,6 +134,7 @@ pub struct DbLoadedMessageV0 {
     pub loaded_addresses: DbLoadedAddresses,
 }
 
+#[derive(Clone)]
 pub struct DbTransaction {
     pub signature: Vec<u8>,
     pub is_vote: bool,
@@ -147,6 +148,7 @@ pub struct DbTransaction {
     pub index: i64,
 }
 
+#[derive(Clone)]
 pub struct LogTransactionRequest {
     pub transaction_info: DbTransaction,
 }
@@ -552,14 +554,14 @@ impl SimplePostgresClient {
 
     pub(crate) fn log_transaction_impl(
         &mut self,
-        transaction_log_info: LogTransactionRequest,
+        transaction_log_info: &LogTransactionRequest,
     ) -> Result<(), GeyserPluginError> {
         let client = self.client.get_mut().unwrap();
         let statement = &client.update_transaction_log_stmt;
         let client = &mut client.client;
         let updated_on = Utc::now().naive_utc();
 
-        let transaction_info = transaction_log_info.transaction_info;
+        let transaction_info = &transaction_log_info.transaction_info;
         let result = client.query(
             statement,
             &[
@@ -578,6 +580,11 @@ impl SimplePostgresClient {
         );
 
         if let Err(err) = result {
+            if err.is_closed() {
+                error!("Database connection closed");
+                return Err(GeyserPluginError::DBConnectionClosed);
+            }
+
             let msg = format!(
                 "Failed to persist the update of transaction info to the PostgreSQL database. Error: {:?}",
                 err

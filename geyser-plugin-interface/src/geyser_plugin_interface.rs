@@ -145,6 +145,13 @@ pub enum GeyserPluginError {
     /// Error when updating the transaction.
     #[error("Error updating transaction. Error message: ({msg})")]
     TransactionUpdateError { msg: String },
+
+    /// Error when update block metadata
+    #[error("Error updating block metadata. Error message: ({msg})")]
+    BlockMetadataUpdateError { msg: String },
+
+    #[error("Error connection closed")]
+    DBConnectionClosed,
 }
 
 /// The current status of a slot

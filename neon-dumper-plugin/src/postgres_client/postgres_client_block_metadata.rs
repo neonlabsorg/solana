@@ -62,14 +62,14 @@ impl SimplePostgresClient {
 
     pub(crate) fn update_block_metadata_impl(
         &mut self,
-        block_info: UpdateBlockMetadataRequest,
+        block_info: &UpdateBlockMetadataRequest,
     ) -> Result<(), GeyserPluginError> {
         let client = self.client.get_mut().unwrap();
         let statement = &client.update_block_metadata_stmt;
         let client = &mut client.client;
         let updated_on = Utc::now().naive_utc();
 
-        let block_info = block_info.block_info;
+        let block_info = &block_info.block_info;
         let result = client.query(
             statement,
             &[
@@ -83,11 +83,16 @@ impl SimplePostgresClient {
         );
 
         if let Err(err) = result {
+            if err.is_closed() {
+                error!("Database connection closed");
+                return Err(GeyserPluginError::DBConnectionClosed);
+            }
+
             let msg = format!(
                 "Failed to persist the update of block metadata to the PostgreSQL database. Error: {:?}",
                 err);
             error!("{}", msg);
-            return Err(GeyserPluginError::AccountsUpdateError { msg });
+            return Err(GeyserPluginError::BlockMetadataUpdateError { msg });
         }
 
         Ok(())

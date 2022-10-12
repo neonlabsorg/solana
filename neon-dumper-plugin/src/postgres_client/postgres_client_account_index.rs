@@ -164,6 +164,11 @@ impl SimplePostgresClient {
             index_entries.clear();
 
             if let Err(err) = result {
+                if err.is_closed() {
+                    error!("Database connection closed");
+                    return Err(GeyserPluginError::DBConnectionClosed);
+                }
+
                 let msg = format!(
                     "Failed to persist the update of account to the PostgreSQL database. Error: {:?}",
                     err
