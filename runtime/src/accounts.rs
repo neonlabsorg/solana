@@ -51,7 +51,6 @@ use {
             State as NonceState,
         },
         pubkey::Pubkey,
-        signature::Signature,
         slot_hashes::SlotHashes,
         system_program,
         sysvar::{self, epoch_schedule::EpochSchedule, instructions::construct_instructions_data},

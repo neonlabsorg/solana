@@ -74,7 +74,6 @@ use {
         hash::Hash,
         pubkey::Pubkey,
         rent::Rent,
-        signature::Signature,
         timing::AtomicInterval,
         transaction::SanitizedTransaction,
     },
@@ -6055,7 +6054,7 @@ impl AccountsDb {
         storage_finder: F,
         mut write_version_producer: P,
         is_cached_store: bool,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) -> Vec<AccountInfo> {
         let mut calc_stored_meta_time = Measure::start("calc_stored_meta");
         let slot = accounts.target_slot();
