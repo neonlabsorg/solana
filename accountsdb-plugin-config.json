@@ -4,6 +4,7 @@
     "threads": 20,
     "batch_size": 20,
     "panic_on_db_errors": false,
+    "store_block_metadata": false,
     "transaction_selector" : {
         "mentions" : ["53DfF883gyixYNXnM7s5xhdeyV8mVk9T4i2hGV9vG9io"]
     },

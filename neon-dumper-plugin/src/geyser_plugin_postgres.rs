@@ -24,6 +24,7 @@ pub struct GeyserPluginPostgres {
     client: Option<ParallelPostgresClient>,
     accounts_selector: Option<AccountsSelector>,
     transaction_selector: Option<TransactionSelector>,
+    store_block_metadata: bool,
 }
 
 impl std::fmt::Debug for GeyserPluginPostgres {
@@ -90,6 +91,9 @@ pub struct GeyserPluginPostgresConfig {
 
     /// Time interval for retry failed DB works
     pub work_postpone_interval_sec: Option<u64>,
+
+    /// Whether to store blocks (default - false)
+    pub store_block_metadata: Option<bool>,
 }
 
 #[derive(Error, Debug)]
@@ -230,6 +234,7 @@ impl GeyserPlugin for GeyserPluginPostgres {
             Ok(config) => {
                 let client = PostgresClientBuilder::build_pararallel_postgres_client(&config)?;
                 self.client = Some(client);
+                self.store_block_metadata = config.store_block_metadata.unwrap_or(false);
             }
         }
 
@@ -430,6 +435,10 @@ impl GeyserPlugin for GeyserPluginPostgres {
     }
 
     fn notify_block_metadata(&mut self, block_info: ReplicaBlockInfoVersions) -> Result<()> {
+        if !self.store_block_metadata {
+            return Ok(())
+        }
+
         match &mut self.client {
             None => {
                 return Err(GeyserPluginError::Custom(Box::new(
