@@ -83,6 +83,7 @@ members = [
     "version",
     "watchtower",
     "zk-token-sdk",
+    "neon-dumper-plugin",
 ]
 
 exclude = [
