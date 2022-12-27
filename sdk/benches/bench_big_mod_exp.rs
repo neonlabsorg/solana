@@ -109,27 +109,10 @@ fn big_mod_exp_test_rsa(c: &mut Criterion) {
         let exponent   = vec![1u8; len];
         let modulus = array_bytes::hex2bytes_unchecked(&modulus);
 
-        c.bench_function("big_mod_exp rnd", |b| b.iter(||
+        c.bench_function(&format!("big_mod_exp rsa {} bits", bits), |b| b.iter(||
             big_mod_exp(
                 base.as_slice(),exponent.as_slice(),modulus.as_slice(),
             )
         ));
     }
 }
-// fn big_mod_exp_test_rnd(c: &mut Criterion) {
-//     let mut rng = rand::thread_rng();
-//
-//     for len in (32..=128).step_by(32){
-//
-//         let base   = vec![0_u8; len].iter().map(|_| {rng.gen()}).collect::<Vec<u8>>();
-//         let exponent   = vec![0_u8; len].iter().map(|_| {rng.gen()}).collect::<Vec<u8>>();
-//         let modulus   = vec![0_u8; len].iter().map(|_| {rng.gen()}).collect::<Vec<u8>>();
-//
-//
-//         c.bench_function("big_mod_exp rnd", |b| b.iter(||
-//             big_mod_exp(
-//                 base.as_slice(),exponent.as_slice(),modulus.as_slice(),
-//             )
-//         ));
-//     }
-// }
