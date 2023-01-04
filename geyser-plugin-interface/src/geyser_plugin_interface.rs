@@ -38,7 +38,7 @@ pub struct ReplicaAccountInfo<'a> {
     pub write_version: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 /// Information about an account being updated
 /// (extended with transaction signature doing this update)
 pub struct ReplicaAccountInfoV2<'a> {
@@ -67,8 +67,8 @@ pub struct ReplicaAccountInfoV2<'a> {
     /// write_version.
     pub write_version: u64,
 
-    /// First signature of the transaction caused this account modification
-    pub txn_signature: Option<&'a Signature>,
+    /// Transaction where this account modification happened
+    pub tx: Option<&'a SanitizedTransaction>,
 }
 
 /// A wrapper to future-proof ReplicaAccountInfo handling.
@@ -165,6 +165,13 @@ pub enum GeyserPluginError {
     /// Error when updating the transaction.
     #[error("Error updating transaction. Error message: ({msg})")]
     TransactionUpdateError { msg: String },
+
+    /// Error when update block metadata
+    #[error("Error updating block metadata. Error message: ({msg})")]
+    BlockMetadataUpdateError { msg: String },
+
+    #[error("Error connection closed")]
+    DBConnectionClosed,
 }
 
 /// The current status of a slot
