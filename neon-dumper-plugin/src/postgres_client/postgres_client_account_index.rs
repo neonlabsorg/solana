@@ -37,7 +37,7 @@ impl SimplePostgresClient {
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
         const BULK_OWNER_INDEX_INSERT_STATEMENT: &str =
-            "INSERT INTO spl_token_owner_index AS owner_index (owner_key, account_key, slot) \
+            "INSERT INTO neon_history.spl_token_owner_index AS owner_index (owner_key, account_key, slot) \
         VALUES ($1, $2, $3) \
         ON CONFLICT (owner_key, account_key) \
         DO UPDATE SET slot=excluded.slot \
@@ -51,7 +51,7 @@ impl SimplePostgresClient {
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
         const BULK_MINT_INDEX_INSERT_STATEMENT: &str =
-            "INSERT INTO spl_token_mint_index AS mint_index (mint_key, account_key, slot) \
+            "INSERT INTO neon_history.spl_token_mint_index AS mint_index (mint_key, account_key, slot) \
         VALUES ($1, $2, $3) \
         ON CONFLICT (mint_key, account_key) \
         DO UPDATE SET slot=excluded.slot \
@@ -114,7 +114,7 @@ impl SimplePostgresClient {
     ) -> Result<Statement, GeyserPluginError> {
         Self::build_bulk_token_index_insert_statement_common(
             client,
-            "spl_token_owner_index",
+            "neon_history.spl_token_owner_index",
             "owner_key",
             config,
         )
@@ -127,7 +127,7 @@ impl SimplePostgresClient {
     ) -> Result<Statement, GeyserPluginError> {
         Self::build_bulk_token_index_insert_statement_common(
             client,
-            "spl_token_mint_index",
+            "neon_history.spl_token_mint_index",
             "mint_key",
             config,
         )

@@ -11,14 +11,14 @@ BEGIN
     -- start from topmost slot
     SELECT s.slot
     INTO current_slot
-    FROM slot AS s
+    FROM neon_history.slot AS s
     ORDER BY s.slot DESC LIMIT 1;
   
     LOOP
         -- get status of current slot
         SELECT s.status
         INTO current_slot_status
-        FROM slot AS s
+        FROM neon_history.slot AS s
         WHERE s.slot = current_slot;
     
         -- already on rooted slot - stop iteration
@@ -41,7 +41,7 @@ BEGIN
         -- If no - go further into the past - select parent slot
         SELECT s.parent
         INTO current_slot
-        FROM slot AS s
+        FROM neon_history.slot AS s
         WHERE s.slot = current_slot;
     END LOOP;
 END;
@@ -61,13 +61,13 @@ BEGIN
     -- find all occurencies of transaction in slots
     SELECT array_agg(txn.slot)
     INTO transaction_slots
-    FROM transaction AS txn
+    FROM neon_history.transaction AS txn
     WHERE position(in_txn_signature in txn.signature) > 0;
 
     -- try to find slot that was rooted with given transaction
     SELECT txn_slot INTO current_slot
     FROM unnest(transaction_slots) AS txn_slot
-         INNER JOIN slot AS s
+         INNER JOIN neon_history.slot AS s
                     ON txn_slot = s.slot
     WHERE s.status = 'rooted'
     LIMIT 1;
@@ -79,14 +79,14 @@ BEGIN
     -- start from topmost slot
     SELECT s.slot
     INTO current_slot
-    FROM slot AS s
+    FROM neon_history.slot AS s
     ORDER BY s.slot DESC LIMIT 1;
 
     LOOP
         -- get status of current slot
         SELECT s.status
         INTO current_slot_status
-        FROM slot AS s
+        FROM neon_history.slot AS s
         WHERE s.slot = current_slot;
 
         -- already on rooted slot - stop iteration
@@ -109,7 +109,7 @@ BEGIN
         -- If no - go further into the past - select parent slot
         SELECT s.parent
         INTO current_slot
-        FROM slot AS s
+        FROM neon_history.slot AS s
         WHERE s.slot = current_slot;
     END LOOP;
 END;
@@ -149,7 +149,7 @@ BEGIN
             acc.slot,
             acc.write_version,
             acc.txn_signature
-        FROM account_audit AS acc
+        FROM neon_history.account_audit AS acc
         WHERE
             acc.slot = current_slot
             AND acc.write_version < max_write_version
@@ -190,14 +190,14 @@ BEGIN
             first.slot,
             first.parent,
             first.status
-        FROM slot AS first
+        FROM neon_history.slot AS first
         WHERE first.slot = start_slot and first.status <> 'rooted'
         UNION
             SELECT
                 next.slot,
                 next.parent,
                 next.status
-            FROM slot AS next
+            FROM neon_history.slot AS next
             INNER JOIN parents p ON p.parent = next.slot
             WHERE next.status <> 'rooted'
     )
@@ -263,7 +263,7 @@ BEGIN
             acc.slot,
             acc.write_version,
             acc.txn_signature
-        FROM account_audit AS acc
+        FROM neon_history.account_audit AS acc
         WHERE
             acc.slot <= start_slot
             AND acc.write_version < max_write_version
@@ -303,19 +303,19 @@ BEGIN
     -- Query minimum write version of account update
     SELECT MIN(acc.write_version)
     INTO max_write_version
-    FROM account_audit AS acc
+    FROM neon_history.account_audit AS acc
     WHERE position(in_txn_signature in acc.txn_signature) > 0;
   
     -- find all occurencies of transaction in slots
     SELECT array_agg(txn.slot)
     INTO transaction_slots
-    FROM transaction AS txn
+    FROM neon_history.transaction AS txn
     WHERE position(in_txn_signature in txn.signature) > 0;
   
     -- Query first rooted slot
     SELECT sl.slot
     INTO first_rooted_slot
-    FROM slot AS sl
+    FROM neon_history.slot AS sl
     WHERE sl.status = 'rooted'
     ORDER BY sl.slot DESC
     LIMIT 1;
@@ -323,7 +323,7 @@ BEGIN
     -- try to find slot that was rooted with given transaction
     SELECT txn_slot INTO current_slot
     FROM unnest(transaction_slots) AS txn_slot
-    INNER JOIN slot AS s
+    INNER JOIN neon_history.slot AS s
     ON txn_slot = s.slot
     WHERE s.status = 'rooted'
     LIMIT 1;
@@ -417,7 +417,7 @@ BEGIN
             acc.slot,
             acc.write_version,
             acc.txn_signature
-        FROM account_audit AS acc
+        FROM neon_history.account_audit AS acc
         WHERE
             acc.slot <= in_slot
             AND acc.pubkey = in_pubkey
@@ -448,7 +448,7 @@ BEGIN
             first.parent,
             first.status,
             1
-        FROM slot AS first
+        FROM neon_history.slot AS first
         WHERE first.slot = start_slot
         UNION
             SELECT
@@ -456,7 +456,7 @@ BEGIN
                 next.parent,
                 next.status,
                 depth + 1
-            FROM slot AS next
+            FROM neon_history.slot AS next
             INNER JOIN parents p ON p.parent = next.slot
             WHERE depth < num_hashes
     )
@@ -466,7 +466,48 @@ BEGIN
 
     RETURN QUERY
         SELECT b.slot, b.blockhash
-        FROM block AS b
+        FROM neon_history.block AS b
         WHERE b.slot = ANY(branch_slots);
 END;
 $get_recent_blockhashes$ LANGUAGE plpgsql;
+
+-----------------------------------------------------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE update_older_state(
+    until_slot BIGINT
+)
+
+AS $update_older_state$
+
+BEGIN
+    -- add recent states of all accounts from account_audit
+    -- before slot until_slot into older_state table
+    INSERT INTO neon_history.older_state
+    SELECT
+        acc1.pubkey,
+        acc1.owner,
+        acc1.lamports,
+        acc1.slot,
+        acc1.executable,
+        acc1.rent_epoch,
+        acc1.data,
+        acc1.write_version,
+        acc1.updated_on,
+        acc1.txn_signature
+    FROM neon_history.account_audit AS acc1
+    INNER JOIN (
+        SELECT
+            acc2.pubkey AS pubkey,
+            MAX(acc2.slot) AS slot,
+            MAX(acc2.write_version) AS write_version
+        FROM neon_history.account_audit AS acc2
+        WHERE acc2.slot < until_slot
+        GROUP BY acc2.pubkey
+    ) latest_versions
+    ON
+        latest_versions.pubkey = acc1.pubkey
+        AND latest_versions.slot = acc1.slot
+        AND latest_versions.write_version = acc1.write_version
+    WHERE
+        acc1.slot < until_slot;
+END;
+$update_older_state$ LANGUAGE plpgsql;

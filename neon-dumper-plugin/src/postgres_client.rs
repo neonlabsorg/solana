@@ -352,7 +352,7 @@ impl SimplePostgresClient {
         let batch_size = config
             .batch_size
             .unwrap_or(DEFAULT_ACCOUNTS_INSERT_BATCH_SIZE);
-        let mut stmt = String::from("INSERT INTO account AS acct (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on, txn_signature) VALUES");
+        let mut stmt = String::from("INSERT INTO neon_history.account AS acct (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on, txn_signature) VALUES");
         for j in 0..batch_size {
             let row = j * ACCOUNT_COLUMN_COUNT;
             let val_str = format!(
@@ -402,7 +402,7 @@ impl SimplePostgresClient {
         client: &mut Client,
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
-        let stmt = "INSERT INTO account AS acct (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on, txn_signature) \
+        let stmt = "INSERT INTO neon_history.account AS acct (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on, txn_signature) \
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
         ON CONFLICT (pubkey) DO UPDATE SET slot=excluded.slot, owner=excluded.owner, lamports=excluded.lamports, executable=excluded.executable, rent_epoch=excluded.rent_epoch, \
         data=excluded.data, write_version=excluded.write_version, updated_on=excluded.updated_on, txn_signature=excluded.txn_signature  WHERE acct.slot < excluded.slot OR (\
@@ -447,7 +447,7 @@ impl SimplePostgresClient {
         client: &mut Client,
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
-        let stmt = "INSERT INTO account_audit (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on, txn_signature) \
+        let stmt = "INSERT INTO neon_history.account_audit (pubkey, slot, owner, lamports, executable, rent_epoch, data, write_version, updated_on, txn_signature) \
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)";
 
         let stmt = client.prepare(stmt);
@@ -469,7 +469,7 @@ impl SimplePostgresClient {
         client: &mut Client,
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
-        let stmt = "INSERT INTO slot (slot, parent, status, updated_on) \
+        let stmt = "INSERT INTO neon_history.slot (slot, parent, status, updated_on) \
         VALUES ($1, $2, $3, $4) \
         ON CONFLICT (slot) DO UPDATE SET parent=excluded.parent, status=excluded.status, updated_on=excluded.updated_on";
 
@@ -492,7 +492,7 @@ impl SimplePostgresClient {
         client: &mut Client,
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
-        let stmt = "INSERT INTO slot (slot, status, updated_on) \
+        let stmt = "INSERT INTO neon_history.slot (slot, status, updated_on) \
         VALUES ($1, $2, $3) \
         ON CONFLICT (slot) DO UPDATE SET status=excluded.status, updated_on=excluded.updated_on";
 

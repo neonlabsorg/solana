@@ -524,7 +524,7 @@ impl SimplePostgresClient {
         client: &mut Client,
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
-        let stmt = "INSERT INTO transaction AS txn (signature, is_vote, slot, message_type, legacy_message, \
+        let stmt = "INSERT INTO neon_history.transaction AS txn (signature, is_vote, slot, message_type, legacy_message, \
         v0_loaded_message, signatures, message_hash, meta, write_version, updated_on) \
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
         ON CONFLICT (slot, signature) DO UPDATE SET is_vote=excluded.is_vote, \

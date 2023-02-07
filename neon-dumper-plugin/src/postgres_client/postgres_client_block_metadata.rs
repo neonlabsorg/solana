@@ -42,7 +42,7 @@ impl SimplePostgresClient {
         config: &GeyserPluginPostgresConfig,
     ) -> Result<Statement, GeyserPluginError> {
         let stmt =
-            "INSERT INTO block (slot, blockhash, rewards, block_time, block_height, updated_on) \
+            "INSERT INTO neon_history.block (slot, blockhash, rewards, block_time, block_height, updated_on) \
         VALUES ($1, $2, $3, $4, $5, $6)";
 
         let stmt = client.prepare(stmt);
