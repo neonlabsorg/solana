@@ -73,8 +73,8 @@ use {
         hash::Hash,
         pubkey::Pubkey,
         rent::Rent,
-        signature::Signature,
         timing::AtomicInterval,
+        transaction::SanitizedTransaction,
     },
     std::{
         borrow::{Borrow, Cow},
@@ -5984,7 +5984,7 @@ impl AccountsDb {
         slot: Slot,
         hashes: Option<&[impl Borrow<Hash>]>,
         accounts_and_meta_to_store: &[(StoredMeta, Option<&impl ReadableAccount>)],
-        txn_signatures_iter: Box<dyn std::iter::Iterator<Item = &Option<&Signature>> + 'a>,
+        txn_iter: Box<dyn std::iter::Iterator<Item = &Option<&SanitizedTransaction>> + 'a>,
     ) -> Vec<AccountInfo> {
         let len = accounts_and_meta_to_store.len();
         let hashes = hashes.map(|hashes| {
@@ -5994,9 +5994,9 @@ impl AccountsDb {
 
         accounts_and_meta_to_store
             .iter()
-            .zip(txn_signatures_iter)
+            .zip(txn_iter)
             .enumerate()
-            .map(|(i, ((meta, account), signature))| {
+            .map(|(i, ((meta, account), txn))| {
                 let hash = hashes.map(|hashes| hashes[i].borrow());
 
                 let account = account
@@ -6008,7 +6008,7 @@ impl AccountsDb {
                     account.lamports(),
                 );
 
-                self.notify_account_at_accounts_update(slot, meta, &account, signature);
+                self.notify_account_at_accounts_update(slot, meta, &account, txn);
 
                 let cached_account = self.accounts_cache.store(slot, &meta.pubkey, account, hash);
                 // hash this account in the bg
@@ -6035,7 +6035,7 @@ impl AccountsDb {
         storage_finder: F,
         mut write_version_producer: P,
         is_cached_store: bool,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) -> Vec<AccountInfo> {
         let mut calc_stored_meta_time = Measure::start("calc_stored_meta");
         let slot = accounts.target_slot();
@@ -6066,18 +6066,18 @@ impl AccountsDb {
             .fetch_add(calc_stored_meta_time.as_us(), Ordering::Relaxed);
 
         if self.caching_enabled && is_cached_store {
-            let signature_iter: Box<dyn std::iter::Iterator<Item = &Option<&Signature>>> =
-                match txn_signatures {
-                    Some(txn_signatures) => {
-                        assert_eq!(txn_signatures.len(), accounts_and_meta_to_store.len());
-                        Box::new(txn_signatures.iter())
+            let txn_iter: Box<dyn std::iter::Iterator<Item = &Option<&SanitizedTransaction>>> =
+                match transactions {
+                    Some(transactions) => {
+                        assert_eq!(transactions.len(), accounts_and_meta_to_store.len());
+                        Box::new(transactions.iter())
                     }
                     None => {
                         Box::new(std::iter::repeat(&None).take(accounts_and_meta_to_store.len()))
                     }
                 };
 
-            self.write_accounts_to_cache(slot, hashes, &accounts_and_meta_to_store, signature_iter)
+            self.write_accounts_to_cache(slot, hashes, &accounts_and_meta_to_store, txn_iter)
         } else {
             match hashes {
                 Some(hashes) => self.write_accounts_to_storage(
@@ -7665,12 +7665,12 @@ impl AccountsDb {
     pub fn store_cached<'a, T: ReadableAccount + Sync + ZeroLamport>(
         &self,
         accounts: impl StorableAccounts<'a, T>,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
     ) {
         self.store(
             accounts,
             self.caching_enabled,
-            txn_signatures,
+            transactions,
             StoreReclaims::Default,
         );
     }
@@ -7685,7 +7685,7 @@ impl AccountsDb {
         &self,
         accounts: impl StorableAccounts<'a, T>,
         is_cached_store: bool,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
         reclaim: StoreReclaims,
     ) {
         // If all transactions in a batch are errored,
@@ -7716,7 +7716,7 @@ impl AccountsDb {
         }
 
         // we use default hashes for now since the same account may be stored to the cache multiple times
-        self.store_accounts_unfrozen(accounts, None, is_cached_store, txn_signatures, reclaim);
+        self.store_accounts_unfrozen(accounts, None, is_cached_store, transactions, reclaim);
         self.report_store_timings();
     }
 
@@ -7848,7 +7848,7 @@ impl AccountsDb {
         accounts: impl StorableAccounts<'a, T>,
         hashes: Option<&[&Hash]>,
         is_cached_store: bool,
-        txn_signatures: Option<&'a [Option<&'a Signature>]>,
+        transactions: Option<&'a [Option<&'a SanitizedTransaction>]>,
         reclaim: StoreReclaims,
     ) {
         // This path comes from a store to a non-frozen slot.
@@ -7866,7 +7866,7 @@ impl AccountsDb {
             None::<Box<dyn Iterator<Item = u64>>>,
             is_cached_store,
             reset_accounts,
-            txn_signatures,
+            transactions,
             reclaim,
         );
     }
@@ -7904,7 +7904,7 @@ impl AccountsDb {
         write_version_producer: Option<Box<dyn Iterator<Item = u64>>>,
         is_cached_store: bool,
         reset_accounts: bool,
-        txn_signatures: Option<&'b [Option<&'b Signature>]>,
+        transactions: Option<&'b [Option<&'b SanitizedTransaction>]>,
         reclaim: StoreReclaims,
     ) -> StoreAccountsTiming {
         let storage_finder = Box::new(move |slot, size| {
@@ -7933,7 +7933,7 @@ impl AccountsDb {
             storage_finder,
             write_version_producer,
             is_cached_store,
-            txn_signatures,
+            transactions,
         );
         store_accounts_time.stop();
         self.stats
