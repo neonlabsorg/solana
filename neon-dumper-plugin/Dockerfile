@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM solanalabs/rust:1.60 AS builder
+FROM solanalabs/rust:1.60.0 AS builder
 
 COPY . /opt/
 
