@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM solanalabs/rust:1.63.0 AS builder
+FROM rust:1.60.0-slim-bullseye AS builder
 
 COPY . /opt/
 
