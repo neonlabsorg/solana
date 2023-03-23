@@ -14,11 +14,10 @@ use {
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount},
         clock::Slot,
-        transaction::SanitizedTransaction,
+        signature::Signature,
     },
     std::sync::{Arc, RwLock},
 };
-
 #[derive(Debug)]
 pub(crate) struct AccountsUpdateNotifierImpl {
     plugin_manager: Arc<RwLock<GeyserPluginManager>>,
@@ -30,10 +29,10 @@ impl AccountsUpdateNotifierInterface for AccountsUpdateNotifierImpl {
         slot: Slot,
         meta: &StoredMeta,
         account: &AccountSharedData,
-        tx: &Option<&SanitizedTransaction>,
+        txn_signature: &Option<&Signature>,
     ) {
         if let Some(account_info) =
-            self.accountinfo_from_shared_account_data(meta, account, tx)
+            self.accountinfo_from_shared_account_data(meta, account, txn_signature)
         {
             self.notify_plugins_of_account_update(account_info, slot, false);
         }
@@ -107,7 +106,7 @@ impl AccountsUpdateNotifierImpl {
         &self,
         meta: &'a StoredMeta,
         account: &'a AccountSharedData,
-        tx: &'a Option<&'a SanitizedTransaction>,
+        txn_signature: &'a Option<&'a Signature>,
     ) -> Option<ReplicaAccountInfoV2<'a>> {
         Some(ReplicaAccountInfoV2 {
             pubkey: meta.pubkey.as_ref(),
@@ -117,7 +116,7 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: account.rent_epoch(),
             data: account.data(),
             write_version: meta.write_version,
-            tx: *tx,
+            txn_signature: *txn_signature,
         })
     }
 
@@ -133,7 +132,7 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: stored_account_meta.account_meta.rent_epoch,
             data: stored_account_meta.data,
             write_version: stored_account_meta.meta.write_version,
-            tx: None,
+            txn_signature: None,
         })
     }
 
