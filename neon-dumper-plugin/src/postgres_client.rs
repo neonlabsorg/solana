@@ -210,7 +210,7 @@ impl<'a> ReadableAccountInfo for ReplicaAccountInfoV2<'a> {
     }
 
     fn txn_signature(&self) -> Option<&[u8]> {
-        self.tx.map(|v| v.signature().as_ref())
+        self.txn_signature.map(|v| v.as_ref())
     }
 }
 
